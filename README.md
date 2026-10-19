@@ -45,6 +45,12 @@ pnpm build
 pnpm test
 ```
 
+## Vertex AI proxy
+
+`packages/proxy` contains an OpenAI-compatible, text-only Vertex AI proxy. On startup it generates an API key and prints it once to stderr as `vertexai-proxy API key: <key>`. Send that key as `Authorization: Bearer <key>`.
+
+The proxy ships with a predefined model map and supports `VERTEX_MODELS` overrides. See [`docs/typescript-proxy.md`](docs/typescript-proxy.md) for setup, the default model list, the `VERTEX_MODELS` format, and current limitations.
+
 ### Linting & Formatting
 
 ```bash
