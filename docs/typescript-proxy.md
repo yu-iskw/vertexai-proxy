@@ -13,13 +13,13 @@ export VERTEX_LOCATION="global"
 pnpm --filter @vertexai-proxy/server start
 ```
 
-On startup the proxy resolves an API key and prints it once to stderr:
+On startup the proxy resolves an API key. A generated key is printed once to stderr. A key loaded from `PROXY_STATE_FILE` is printed the same way.
 
 ```text
 vertexai-proxy API key: <key>
 ```
 
-Copy that key and send it as `Authorization: Bearer <key>`.
+A key loaded from `PROXY_API_KEY` is not printed. Copy a printed key, or use the `PROXY_API_KEY` value you set, and send it as `Authorization: Bearer <key>`.
 
 By default the key is random on every start. Set `PROXY_API_KEY` to a fixed secret (at least 16 characters) for a stable key you control. Set `PROXY_STATE_FILE` (for example `/tmp/vertexai-proxy.json`) to persist a generated key across restarts. The JSON file is written with mode `0600` and contains `apiKey` and `createdAt`. `PROXY_API_KEY` overrides the state file when both are set.
 
@@ -36,15 +36,18 @@ Flags override environment variables.
 | `--log-level <level>`                   | `PROXY_LOG_LEVEL`             | `info`         |
 | `-h, --help`                            |                               |                |
 
-`--models` accepts the same comma-separated syntax as `VERTEX_MODELS` and restricts the available set. `--location` and `VERTEX_LOCATION` accept `global`, `us`, `eu`, or a regional location such as `us-central1`. `PROXY_PORT` sets the listen port and has no flag.
+`--models` accepts the same comma-separated syntax as `VERTEX_MODELS` and restricts the available set. `--location` and `VERTEX_LOCATION` accept `global`, `us`, `eu`, or a regional location such as `us-central1`. Listen host and port have no flags.
 
-| Environment        | Purpose                                                   |
-| ------------------ | --------------------------------------------------------- |
-| `PROXY_API_KEY`    | Fixed bearer key (min 16 characters)                      |
-| `PROXY_STATE_FILE` | Load or create persisted API key JSON (mode `0600`)       |
-| `PROXY_LOG_LEVEL`  | `error`, `warn`, `info`, or `debug`                       |
-| `PROXY_ACCESS_LOG` | Set `0` to suppress HTTP request/response lines at `info` |
-| `PROXY_LOG_FILE`   | Append emitted log lines to a file                        |
+| Environment        | Purpose                                                                    |
+| ------------------ | -------------------------------------------------------------------------- |
+| `PROXY_HOST`       | `127.0.0.1` or `0.0.0.0`. Unset means `127.0.0.1`.                         |
+| `PROXY_PORT`       | Listen port. Default `8765`.                                               |
+| `PORT`             | Listen port only when `PROXY_HOST` is set and `PROXY_PORT` is unset.       |
+| `PROXY_API_KEY`    | Fixed bearer key (min 16 characters). Not printed at startup.              |
+| `PROXY_STATE_FILE` | Load or create persisted API key JSON (mode `0600`). The key is printed.   |
+| `PROXY_LOG_LEVEL`  | `error`, `warn`, `info`, or `debug`                                        |
+| `PROXY_ACCESS_LOG` | Set `0` to suppress HTTP request/response lines at `info`                  |
+| `PROXY_LOG_FILE`   | Append emitted log lines to a file, including a printed generated key line |
 
 Example local setup with a stable key and logs:
 
@@ -148,4 +151,4 @@ Defaults are `VERTEX_LOCATION=global`, `PROXY_PORT=8765`, and `E2E_MODELS=gemini
 
 This is a **text-only** implementation. It does **not** support incremental streaming from Vertex, tool calling, multimodal inputs, or the Responses API. A function call is reported as `finish_reason: tool_calls`, but no tool-call payload is forwarded. These are essential for many coding agents and must be added before claiming broad compatibility. Cursor may not be able to reach a local proxy if it routes BYOK requests through remote infrastructure.
 
-Security defaults: localhost binding, a random bearer key printed at startup, an explicit model allowlist, a 1 MiB request body limit, an upstream timeout, and ADC (no downloaded service-account key). Real Vertex AI and agent integration tests remain outstanding. The Cursor CLI cannot use this proxy today. See [`docs/cursor-cli.md`](cursor-cli.md) for the evidence and alternatives. The desktop Cursor IDE path is documented in [`docs/cursor-ide.md`](cursor-ide.md).
+Security defaults: loopback binding unless `PROXY_HOST` is `0.0.0.0`, a random bearer key printed at startup when it was generated, an explicit model allowlist, a 1 MiB request body limit, an upstream timeout, and ADC (no downloaded service-account key). A `PROXY_API_KEY` value is not printed. Real Vertex AI and agent integration tests remain outstanding. The Cursor CLI cannot use this proxy today. See [`docs/cursor-cli.md`](cursor-cli.md) for the evidence and alternatives. The desktop Cursor IDE path is documented in [`docs/cursor-ide.md`](cursor-ide.md).

@@ -23,14 +23,12 @@ describe('cli', () => {
       VERTEX_LOCATION: 'us-central1',
       VERTEX_MODELS: 'gemini-2.5-pro',
       IMPERSONATE_SERVICE_ACCOUNT: SERVICE_ACCOUNT,
-      PROXY_PORT: '9999',
     });
 
     expect(parsed.project).toBe(PROJECT);
     expect(parsed.location).toBe('us-central1');
     expect([...parsed.models.keys()]).toEqual(['gemini-2.5-pro']);
     expect(parsed.impersonateServiceAccount).toBe(SERVICE_ACCOUNT);
-    expect(parsed.port).toBe(9999);
   });
 
   it('prefers flags over environment values', () => {
@@ -50,7 +48,6 @@ describe('cli', () => {
         VERTEX_LOCATION: 'us-central1',
         VERTEX_MODELS: 'gemini-2.5-pro',
         IMPERSONATE_SERVICE_ACCOUNT: 'env@env-project.iam.gserviceaccount.com',
-        PROXY_PORT: '9999',
       },
     );
 
@@ -58,7 +55,6 @@ describe('cli', () => {
     expect(parsed.location).toBe('global');
     expect([...parsed.models.keys()]).toEqual(['gemini-3.8-flash']);
     expect(parsed.impersonateServiceAccount).toBe('flag@flag-project.iam.gserviceaccount.com');
-    expect(parsed.port).toBe(9999);
   });
 
   it('returns help without requiring a project', () => {
@@ -77,12 +73,6 @@ describe('cli', () => {
   it('rejects an invalid location', () => {
     expect(() => parseCli(['--project', PROJECT, '--location', 'us-central'], {})).toThrow(
       /global, us, eu/,
-    );
-  });
-
-  it('rejects an invalid port', () => {
-    expect(() => parseCli([], { GOOGLE_CLOUD_PROJECT: PROJECT, PROXY_PORT: '0' })).toThrow(
-      /PROXY_PORT/,
     );
   });
 
