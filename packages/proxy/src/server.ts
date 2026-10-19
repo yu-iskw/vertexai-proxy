@@ -201,7 +201,7 @@ export function start(
 
   const logPath = logFilePath(env);
   if (logPath !== undefined) {
-    logger.info(`access log file: ${logPath}`);
+    logger.info(`log file: ${logPath}`);
   }
   logger.info(`log level: ${logLevel}`);
   const server = createServer((req, res) => {

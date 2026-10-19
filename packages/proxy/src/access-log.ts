@@ -5,13 +5,17 @@ export function accessLogEnabled(env: NodeJS.ProcessEnv): boolean {
   return value !== '0' && value !== 'false' && value !== 'no';
 }
 
+function shouldLogAccess(logger: Logger, env: NodeJS.ProcessEnv): boolean {
+  return accessLogEnabled(env) && logger.isEnabled('info');
+}
+
 export function logRequest(
   method: string,
   path: string,
   logger: Logger,
   env: NodeJS.ProcessEnv,
 ): void {
-  if (!accessLogEnabled(env) || !logger.isEnabled('info')) return;
+  if (!shouldLogAccess(logger, env)) return;
   logger.info(`request ${method} ${path}`);
 }
 
@@ -26,7 +30,7 @@ export type LogResponseInput = {
 };
 
 export function logResponse(input: LogResponseInput): void {
-  if (!accessLogEnabled(input.env) || !input.logger.isEnabled('info')) return;
+  if (!shouldLogAccess(input.logger, input.env)) return;
   input.logger.info(
     `response ${input.method} ${input.path} ${input.status} ${input.durationMs}ms${formatAccessLogMeta(input.meta)}`,
   );

@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { createLogger, parseLogLevel, resolveLogLevel } from './logger.js';
+import { createLogger, parseLogLevel, resolveLogLevel, writeBootstrapLine } from './logger.js';
 
 describe('parseLogLevel', () => {
   it('accepts known levels', () => {
@@ -29,5 +29,19 @@ describe('createLogger', () => {
     expect(logger.isEnabled('info')).toBe(false);
     expect(logger.isEnabled('warn')).toBe(true);
     expect(logger.isEnabled('error')).toBe(true);
+  });
+});
+
+describe('writeBootstrapLine', () => {
+  it('writes even when the configured log level is warn', () => {
+    const writes: string[] = [];
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    createLogger('warn', {});
+    writeBootstrapLine('listening on http://127.0.0.1:8765', {});
+    stderr.mockRestore();
+    expect(writes).toEqual(['vertexai-proxy listening on http://127.0.0.1:8765\n']);
   });
 });

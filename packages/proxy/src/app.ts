@@ -69,13 +69,21 @@ class HttpError extends Error {
   readonly status: number;
   readonly type: string;
   readonly code: string | undefined;
+  readonly accessMeta?: AccessLogMeta;
 
-  constructor(status: number, message: string, type: string, code?: string) {
+  constructor(
+    status: number,
+    message: string,
+    type: string,
+    code?: string,
+    accessMeta?: AccessLogMeta,
+  ) {
     super(message);
     this.name = 'HttpError';
     this.status = status;
     this.type = type;
     this.code = code;
+    this.accessMeta = accessMeta;
   }
 }
 
@@ -404,7 +412,19 @@ async function callVertex(
     });
     const upstreamStatus = response.status;
     if (!response.ok) {
-      throw new HttpError(502, `Vertex AI returned HTTP ${upstreamStatus}`, 'api_error');
+      throw new HttpError(
+        502,
+        `Vertex AI returned HTTP ${upstreamStatus}`,
+        'api_error',
+        undefined,
+        {
+          ...vertexRoutingMeta(options.project, options.location),
+          model: input.model,
+          vertex_provider: target.provider,
+          vertex_model: target.model,
+          vertex_upstream_status: upstreamStatus,
+        },
+      );
     }
     const data = (await response.json()) as unknown;
     const parsed = target.provider === 'gemini' ? geminiOutput(data) : anthropicOutput(data);
@@ -488,8 +508,17 @@ export function createApp(options: AppOptions): App {
         );
       } catch (cause) {
         if (cause instanceof HttpError) {
-          return errorResponse(cause.status, cause.message, cause.type, cause.code);
+          return errorResponse(
+            cause.status,
+            cause.message,
+            cause.type,
+            cause.code,
+            cause.accessMeta,
+          );
         }
+        options.logger.error(
+          `chat completion failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+        );
         return errorResponse(502, 'Vertex AI request failed', 'api_error');
       }
     },
