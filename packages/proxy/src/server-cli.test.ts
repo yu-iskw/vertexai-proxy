@@ -106,6 +106,19 @@ describe('cli', () => {
     expect(() => parseCli([], {})).toThrow(/GOOGLE_CLOUD_PROJECT|--project/);
   });
 
+  it('parses log level from flag and environment', () => {
+    expect(options(['--project', PROJECT, '--log-level', 'debug'], {}).logLevel).toBe('debug');
+    expect(options([], { GOOGLE_CLOUD_PROJECT: PROJECT, PROXY_LOG_LEVEL: 'warn' }).logLevel).toBe(
+      'warn',
+    );
+  });
+
+  it('rejects an invalid log level', () => {
+    expect(() => parseCli(['--project', PROJECT, '--log-level', 'trace'], {})).toThrow(
+      /PROXY_LOG_LEVEL/,
+    );
+  });
+
   it('rejects an invalid service account', () => {
     expect(() =>
       parseCli(['--project', PROJECT, '--impersonate-service-account', 'not-an-email'], {}),

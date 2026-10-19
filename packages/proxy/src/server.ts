@@ -4,9 +4,17 @@ import { parseArgs } from 'node:util';
 
 import { GoogleAuth, Impersonated } from 'google-auth-library';
 
-import { announceApiKey, generateApiKey } from './api-key.js';
+import { logRequest, logResponse, requestPath } from './access-log.js';
+import { resolveApiKey } from './api-key-state.js';
 import { createApp } from './app.js';
 import { isSupportedLocation } from './locations.js';
+import {
+  createLogger,
+  logFilePath,
+  resolveLogLevel,
+  writeBootstrapLine,
+  type LogLevel,
+} from './logger.js';
 import { resolveModels, type ModelDefinition } from './models.js';
 
 const PROJECT_PATTERN = /^[a-z][a-z0-9-]{4,62}$/;
@@ -20,10 +28,16 @@ Options:
   --location <location>                  global, us, eu, or a region (env: VERTEX_LOCATION, default: global)
   --models <ids>                         Comma-separated model IDs (env: VERTEX_MODELS)
   --impersonate-service-account <email>  Target service account (env: IMPERSONATE_SERVICE_ACCOUNT)
+  --log-level <level>                    error, warn, info, or debug (env: PROXY_LOG_LEVEL, default: info)
   -h, --help                             Show this help
 
 Environment:
   PROXY_PORT                             Listen port (default: 8765)
+  PROXY_LOG_LEVEL                        Minimum log level (default: info)
+  PROXY_ACCESS_LOG                       HTTP access lines at info (default: 1; set 0 to disable)
+  PROXY_LOG_FILE                         Append all emitted log lines to this file path
+  PROXY_API_KEY                          Fixed bearer key (min 16 characters); overrides state file
+  PROXY_STATE_FILE                       JSON file path to load or persist a generated API key (mode 0600)
 `;
 
 type CliOptions = {
@@ -32,6 +46,7 @@ type CliOptions = {
   models: ReadonlyMap<string, ModelDefinition>;
   impersonateServiceAccount: string | undefined;
   port: number;
+  logLevel: LogLevel;
 };
 
 type CliResult = { help: true } | { help: false; options: CliOptions };
@@ -50,6 +65,7 @@ function parseCliArgs(argv: string[]) {
         location: { type: 'string' },
         models: { type: 'string' },
         'impersonate-service-account': { type: 'string' },
+        'log-level': { type: 'string' },
         help: { type: 'boolean', short: 'h' },
       },
     });
@@ -118,6 +134,7 @@ export function parseCli(argv: string[], env: NodeJS.ProcessEnv = process.env): 
       ),
       impersonateServiceAccount: resolveImpersonation(values['impersonate-service-account'], env),
       port: resolvePort(env),
+      logLevel: resolveLogLevel(values['log-level'], env),
     },
   };
 }
@@ -163,28 +180,67 @@ export function start(
     process.stdout.write(USAGE);
     return;
   }
-  const { project, location, models, impersonateServiceAccount, port } = parsed.options;
-  const apiKey = generateApiKey();
-  announceApiKey(apiKey);
+  const { project, location, models, impersonateServiceAccount, port, logLevel } = parsed.options;
+  const logger = createLogger(logLevel, env);
+  const { apiKey, source, stateFile } = resolveApiKey(env);
+  if (source === 'env') {
+    logger.info('API key loaded from PROXY_API_KEY');
+  } else if (source === 'state-file' && stateFile !== undefined) {
+    logger.info(`API key loaded from ${stateFile}`);
+  } else if (stateFile !== undefined) {
+    logger.info(`API key generated and persisted to ${stateFile}`);
+  } else {
+    logger.info(
+      'API key generated for this process (set PROXY_API_KEY or PROXY_STATE_FILE to fix across restarts)',
+    );
+  }
+  writeBootstrapLine(`API key: ${apiKey}`, env);
 
   const getAccessToken = createGetAccessToken(impersonateServiceAccount);
-  const app = createApp({ apiKey, models, project, location, getAccessToken });
+  const app = createApp({ apiKey, models, project, location, getAccessToken, logger });
 
+  const logPath = logFilePath(env);
+  if (logPath !== undefined) {
+    logger.info(`log file: ${logPath}`);
+  }
+  logger.info(`log level: ${logLevel}`);
   const server = createServer((req, res) => {
+    const started = Date.now();
+    const method = req.method ?? 'GET';
+    const path = requestPath(req.url ?? '/');
+    logRequest(method, path, logger, env);
     void app
       .handle({
-        method: req.method ?? 'GET',
-        path: req.url ?? '/',
+        method,
+        path,
         authorization: req.headers.authorization,
         body: req,
       })
       .then((response) => {
+        logResponse({
+          method,
+          path,
+          status: response.status,
+          durationMs: Date.now() - started,
+          meta: response.accessMeta,
+          logger,
+          env,
+        });
         res.writeHead(response.status, response.headers);
         res.end(response.body);
       })
       .catch((cause: unknown) => {
         const message = cause instanceof Error ? cause.message : String(cause);
-        process.stderr.write(`vertexai-proxy request failed: ${message}\n`);
+        logger.error(`request failed: ${message}`);
+        logResponse({
+          method,
+          path,
+          status: 500,
+          durationMs: Date.now() - started,
+          meta: { error_type: 'api_error' },
+          logger,
+          env,
+        });
         if (!res.headersSent) {
           res.writeHead(500, { 'content-type': 'application/json' });
           res.end(
@@ -194,7 +250,7 @@ export function start(
       });
   });
   server.listen(port, '127.0.0.1', () => {
-    process.stderr.write(`vertexai-proxy listening on http://127.0.0.1:${port}\n`);
+    writeBootstrapLine(`listening on http://127.0.0.1:${port}`, env);
   });
 }
 
@@ -204,7 +260,7 @@ if (entrypoint !== '' && import.meta.url === pathToFileURL(entrypoint).href) {
     start();
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
-    process.stderr.write(`vertexai-proxy: ${message}\n`);
+    createLogger(resolveLogLevel(undefined, process.env), process.env).error(message);
     process.exitCode = 1;
   }
 }

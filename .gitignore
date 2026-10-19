@@ -148,6 +148,9 @@ TODO.md
 
 *.bak
 
+# Local tooling (e.g. cursor-agent-local download)
+.tools/
+
 # CodeQL local artifacts
 .codeql_db/
 codeql-results.sarif

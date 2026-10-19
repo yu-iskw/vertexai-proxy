@@ -2,7 +2,7 @@ import { Readable } from 'node:stream';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { announceApiKey, generateApiKey } from './api-key.js';
+import { generateApiKey } from './api-key.js';
 import {
   createApp,
   mapAnthropicFinishReason,
@@ -12,6 +12,7 @@ import {
   type FetchLike,
   type ProxyResponse,
 } from './app.js';
+import { createLogger, writeBootstrapLine } from './logger.js';
 import { resolveModels } from './models.js';
 
 const FIXED_KEY = 'fixed-test-key';
@@ -58,6 +59,7 @@ function makeApp(overrides: Partial<AppOptions> = {}): Harness {
     project: 'test-project',
     location: 'us-central1',
     getAccessToken,
+    logger: createLogger('error', {}),
     fetch: fetchMock,
     ...overrides,
   });
@@ -81,12 +83,15 @@ describe('api key', () => {
     expect(generateApiKey()).not.toBe(key);
   });
 
-  it('announces the key once with a clear label', () => {
-    const lines: string[] = [];
-
-    announceApiKey('abc', (line) => lines.push(line));
-
-    expect(lines).toEqual(['vertexai-proxy API key: abc\n']);
+  it('writes bootstrap key lines regardless of log level', () => {
+    const writes: string[] = [];
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    writeBootstrapLine('API key: abc', {});
+    stderr.mockRestore();
+    expect(writes).toEqual(['vertexai-proxy API key: abc\n']);
   });
 });
 
@@ -180,6 +185,12 @@ describe('http surface', () => {
     expect(parseJson(response.body)).toEqual({
       object: 'list',
       data: [{ id: 'fast', object: 'model', owned_by: 'vertex-ai' }],
+    });
+    expect(response.accessMeta).toEqual({
+      vertex_project: 'test-project',
+      vertex_location: 'us-central1',
+      model_count: 1,
+      models: 'fast',
     });
   });
 
@@ -306,6 +317,15 @@ describe('vertex request mapping', () => {
     });
 
     expect(response.status).toBe(200);
+    expect(response.accessMeta).toMatchObject({
+      vertex_project: 'test-project',
+      vertex_location: 'us-central1',
+      model: 'gemini-2.5-pro',
+      vertex_provider: 'gemini',
+      vertex_model: 'gemini-2.5-pro',
+      vertex_upstream_status: 200,
+      finish_reason: 'stop',
+    });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe(
@@ -334,6 +354,48 @@ describe('vertex request mapping', () => {
         },
       ],
       usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
+    });
+  });
+
+  it('returns OpenAI-style SSE when stream is true', async () => {
+    const { app, fetchMock } = makeApp();
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          candidates: [{ content: { parts: [{ text: 'streamed' }] }, finishReason: 'STOP' }],
+          usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1 },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const response = await request(app, 'POST', '/v1/chat/completions', {
+      authorization: bearer(),
+      body: {
+        model: 'gemini-2.5-pro',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: true,
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers['content-type']).toBe('text/event-stream');
+    expect(response.accessMeta).toMatchObject({
+      vertex_upstream_status: 200,
+      finish_reason: 'stop',
+    });
+    const lines = response.body.split('\n').filter((line) => line.startsWith('data: '));
+    expect(lines).toHaveLength(3);
+    expect(lines[2]).toBe('data: [DONE]');
+    const first = parseJson(lines[0].slice('data: '.length));
+    expect(first).toMatchObject({
+      object: 'chat.completion.chunk',
+      choices: [{ delta: { role: 'assistant', content: 'streamed' } }],
+    });
+    const second = parseJson(lines[1].slice('data: '.length));
+    expect(second).toMatchObject({
+      object: 'chat.completion.chunk',
+      choices: [{ finish_reason: 'stop' }],
     });
   });
 
