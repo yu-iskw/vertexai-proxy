@@ -39,6 +39,34 @@ aiserver.v1.AiService ... streamChat ... streamChatWeb ... streamChatTryReallyHa
 
 Those methods are server-streaming Cursor RPC methods, not OpenAI HTTP routes. Source: `index.js` in the installed package.
 
+## Installed CLI re-check
+
+`cursor` is the Cursor IDE CLI version 3.25.9. Its `agent` subcommand starts the same agent CLI as `cursor-agent` and `agent`, which report version `2026.10.12-d47ca18`.
+
+`cursor agent --help` and `cursor-agent --help` show the same options. There is no option for a custom OpenAI base URL or provider API key. The only endpoint override is `-e/--endpoint` or `CURSOR_API_ENDPOINT`, which selects Cursor's public API base.
+
+Subcommand help for `models`, `status`, `login`, and `mcp` shows no provider or base URL setting. `bedrock configure` configures AWS Bedrock only.
+
+The key structure of `~/.cursor/cli-config.json` contains no provider, API-key, or OpenAI base-URL setting. `serverConfigCache.backendUrl` and `serverConfigCache.agentUrlConfig.agentUrl` are caches of URLs provided by Cursor servers, not a documented override. Editing those cache values would not make the CLI speak OpenAI chat completions.
+
+Read-only grep counts in the installed bundle:
+
+| Pattern                 | Count | Representative context                                    |
+| ----------------------- | ----- | --------------------------------------------------------- |
+| `OPENAI_BASE_URL`       | 0     | none                                                      |
+| `OPENAI_API_BASE`       | 0     | none                                                      |
+| `openaiBaseUrl`         | 0     | none                                                      |
+| `overrideOpenAIBaseUrl` | 0     | none                                                      |
+| `baseUrl`               | 126   | PDF worker, Cursor bridge, metrics, download, local agent |
+| `apiBase`               | 5     | Cursor auth and GitHub API                                |
+| `CURSOR_API_URL`        | 4     | Cursor public API base override                           |
+| `CURSOR_API_ENDPOINT`   | 9     | Cursor public API base override                           |
+| `customModel`           | 10    | account custom model IDs                                  |
+| `provider`              | 307   | permissions, config, telemetry, desktop providers         |
+| `byok`                  | 5     | server feature flags, not a CLI option                    |
+
+No supported way to point the installed CLI at this OpenAI-compatible proxy on `127.0.0.1` was found. There is no proposed config, env var, or test command.
+
 ## External confirmation
 
 The official CLI parameter reference lists Cursor authentication, `--header`, `--model`, `--list-models`, `--print`, and `--output-format`. It does not list a custom OpenAI base URL or provider key.
