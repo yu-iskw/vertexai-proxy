@@ -1,4 +1,4 @@
-import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 
 import type { ModelDefinition } from './models.js';
 
@@ -119,9 +119,9 @@ function errorResponse(
 
 function authorized(header: string | undefined, apiKey: string): boolean {
   const candidate = header?.startsWith('Bearer ') === true ? header.slice(7) : '';
-  const left = createHash('sha256').update(candidate).digest();
-  const right = createHash('sha256').update(apiKey).digest();
-  return timingSafeEqual(left, right);
+  const left = Buffer.from(candidate);
+  const right = Buffer.from(apiKey);
+  return left.length === right.length && timingSafeEqual(left, right);
 }
 
 async function bodyOf(body: AsyncIterable<Uint8Array>): Promise<unknown> {
