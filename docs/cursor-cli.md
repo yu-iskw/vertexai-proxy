@@ -1,55 +1,69 @@
-# Cursor CLI and this proxy
+# Cursor CLI setup attempt
 
-## Conclusion
+## Outcome
 
 The Cursor CLI cannot use this proxy today.
 
-`cursor-agent` and `agent` authenticate with a Cursor account or Cursor API key and speak Cursor's private RPC protocol. They do not expose a custom OpenAI-compatible base URL or a provider API key. Pointing the hidden `--endpoint` option at this proxy is not supported.
+The CLI authenticates with a Cursor account or Cursor API key and speaks Cursor's private RPC protocol. It has no custom OpenAI-compatible base URL and no provider API key. This page is a step-by-step verification guide so you can confirm that on your machine. It is not a working setup guide.
 
-## Local findings
+## Before you start
 
-The `cursor-agent` and `agent` commands are symlinks to the same binary.
+- `cursor-agent` and `agent` are the terminal agent CLI. `cursor` is the Cursor IDE CLI, and `cursor agent` starts the same terminal agent.
+- The proxy exposes OpenAI-compatible HTTP routes. The CLI does not use those routes.
+- For the desktop Cursor IDE path, see [`docs/cursor-ide.md`](cursor-ide.md).
 
-```text
-/Users/yu/.local/bin/cursor-agent -> /Users/yu/.local/share/cursor-agent/versions/2026.10.12-d47ca18/cursor-agent
-/Users/yu/.local/bin/agent        -> /Users/yu/.local/share/cursor-agent/versions/2026.10.12-d47ca18/cursor-agent
+## Step 1: Check the installed CLI
+
+```bash
+command -v cursor cursor-agent agent
+cursor --version
+cursor-agent --version
+cursor agent --help
+cursor-agent --help
 ```
 
-Source: `command -v cursor-agent agent` and `ls -l` on those paths.
+The help shows `--api-key` or `CURSOR_API_KEY`, `-H/--header`, `-e/--endpoint` or `CURSOR_API_ENDPOINT`, `--model`, `--list-models`, `-p/--print`, and `--output-format`.
 
-`cursor-agent --help` lists these relevant global options:
+There is no option for a custom OpenAI base URL or an OpenAI provider key. Source: local `cursor-agent --help` and `cursor agent --help`.
 
-- `--api-key <key>` or `CURSOR_API_KEY`
-- `-H, --header <header>` to add a custom header to agent requests
-- `-e, --endpoint <url>` or `CURSOR_API_ENDPOINT`, default `https://api2.cursor.sh`
-- `--model <model>`
-- `--list-models`
-- `-p, --print`
-- `--output-format text|json|stream-json`
+## Step 2: Check the only endpoint override
 
-There is no option for an OpenAI-compatible base URL or an OpenAI provider key. Source: local `cursor-agent --help`.
+`-e/--endpoint` and `CURSOR_API_ENDPOINT` select Cursor's public API base. They do not select an OpenAI-compatible API.
 
-A recursive grep of the installed package found no `OPENAI_BASE_URL`, `openaiBaseUrl`, `OPENAI_API_BASE`, or `OPENAI_API_KEY` strings. The only endpoint override is `CURSOR_API_ENDPOINT` in `index.js`. Source: read-only grep in `/Users/yu/.local/share/cursor-agent/versions/2026.10.12-d47ca18`.
+Cursor staff state that the CLI does not support BYOK with your own provider API keys yet and only uses Cursor account authentication. Source: <https://forum.cursor.com/t/can-i-use-provider-api-keys-with-cursor-cli-agent/149158/3>
 
-A grep for `chat/completions` and `/v1/responses` found no matches in the installed JavaScript. The bundled CLI instead defines Cursor's own service:
+LiteLLM documents that the CLI posts to `/auth/exchange_user_api_key` and then uses Cursor-private RPC. Pointing it at an OpenAI-compatible proxy fails with `The provided API key is invalid`. Source: <https://docs.litellm.ai/docs/tutorials/cursor_integration>
+
+Do not point this proxy at `--endpoint`.
+
+## Step 3: Confirm the CLI protocol
+
+A read-only grep of the installed bundle found no `OPENAI_BASE_URL`, `OPENAI_API_BASE`, `openaiBaseUrl`, or `overrideOpenAIBaseUrl` strings. It found no `chat/completions` or `/v1/responses` routes.
+
+The bundle defines Cursor's own service:
 
 ```text
 aiserver.v1.AiService ... streamChat ... streamChatWeb ... streamChatTryReallyHard
 ```
 
-Those methods are server-streaming Cursor RPC methods, not OpenAI HTTP routes. Source: `index.js` in the installed package.
+Those are server-streaming Cursor RPC methods, not OpenAI HTTP routes. Source: installed bundle at `/Users/yu/.local/share/cursor-agent/versions/2026.10.12-d47ca18`.
 
-## Installed CLI re-check
+## Step 4: Check the CLI config
 
-`cursor` is the Cursor IDE CLI version 3.25.9. Its `agent` subcommand starts the same agent CLI as `cursor-agent` and `agent`, which report version `2026.10.12-d47ca18`.
+`~/.cursor/cli-config.json` has no provider, API-key, or OpenAI base-URL setting.
 
-`cursor agent --help` and `cursor-agent --help` show the same options. There is no option for a custom OpenAI base URL or provider API key. The only endpoint override is `-e/--endpoint` or `CURSOR_API_ENDPOINT`, which selects Cursor's public API base.
+`serverConfigCache.backendUrl` and `serverConfigCache.agentUrlConfig.agentUrl` are caches of URLs provided by Cursor servers. They are not a documented override. Editing those cache values would not make the CLI speak OpenAI chat completions.
 
-Subcommand help for `models`, `status`, `login`, and `mcp` shows no provider or base URL setting. `bedrock configure` configures AWS Bedrock only.
+## Step 5: Choose a supported path
 
-The key structure of `~/.cursor/cli-config.json` contains no provider, API-key, or OpenAI base-URL setting. `serverConfigCache.backendUrl` and `serverConfigCache.agentUrlConfig.agentUrl` are caches of URLs provided by Cursor servers, not a documented override. Editing those cache values would not make the CLI speak OpenAI chat completions.
+- Use the desktop Cursor IDE with a public HTTPS URL. See [`docs/cursor-ide.md`](cursor-ide.md).
+- Use another OpenAI-compatible CLI with base URL `http://127.0.0.1:8765/v1` and the key printed at startup.
 
-Read-only grep counts in the installed bundle:
+OpenAI's Cursor integration article says BYOK and custom OpenAI-compatible base URLs apply only to local Chat and Agent in the Cursor desktop app. They do not apply to the Cursor CLI, Cloud or Background Agents, Tab, Auto, or the API/SDK. Source: <https://help.openai.com/en/articles/20001506-using-openai-models-in-cursor>
+
+## Evidence
+
+Grep counts from the installed bundle:
 
 | Pattern                 | Count | Representative context                                    |
 | ----------------------- | ----- | --------------------------------------------------------- |
@@ -65,37 +79,7 @@ Read-only grep counts in the installed bundle:
 | `provider`              | 307   | permissions, config, telemetry, desktop providers         |
 | `byok`                  | 5     | server feature flags, not a CLI option                    |
 
-No supported way to point the installed CLI at this OpenAI-compatible proxy on `127.0.0.1` was found. There is no proposed config, env var, or test command.
-
-## External confirmation
-
-The official CLI parameter reference lists Cursor authentication, `--header`, `--model`, `--list-models`, `--print`, and `--output-format`. It does not list a custom OpenAI base URL or provider key.
-
-Source: <https://cursor.com/docs/cli/reference/parameters>
-
-Cursor staff state that the CLI does not support BYOK with your own provider API keys yet and only uses Cursor account authentication.
-
-Source: <https://forum.cursor.com/t/can-i-use-provider-api-keys-with-cursor-cli-agent/149158/3>
-
-OpenAI's Cursor integration article says BYOK and custom OpenAI-compatible base URLs apply only to local Chat and Agent in the Cursor desktop app. They do not apply to the Cursor CLI, Cloud or Background agents, Tab, Auto, or the API/SDK.
-
-Source: <https://help.openai.com/en/articles/20001506-using-openai-models-in-cursor>
-
-LiteLLM documents the hidden `--endpoint` / `CURSOR_API_ENDPOINT` option as a Cursor backend selector. The CLI posts to `/auth/exchange_user_api_key` and then uses Cursor-private RPC. Pointing it at an OpenAI-compatible proxy fails with `The provided API key is invalid`.
-
-Source: <https://docs.litellm.ai/docs/tutorials/cursor_integration>
-
-The Cursor desktop app does have an `Override OpenAI Base URL` setting. Requests still route through Cursor's servers, so a `127.0.0.1` proxy is generally not reachable unless it is exposed at a public HTTPS URL.
-
-Sources: <https://cursor.com/help/models-and-usage/api-keys> and <https://forum.cursor.com/t/how-to-use-a-custom-openai-compatible-api-in-cursor-setup-limits-and-tips/171497>
-
-## What this means
-
-- The Cursor CLI cannot connect to this proxy today.
-- The Cursor desktop app override is a separate path. It needs a publicly reachable HTTPS URL, not a localhost address.
-- Other OpenAI-compatible CLIs can use this proxy with base URL `http://127.0.0.1:8765/v1` and the key printed at startup.
-
-For the desktop Cursor IDE path, see [`docs/cursor-ide.md`](cursor-ide.md).
+The official CLI parameter reference also has no custom base URL or provider key. Source: <https://cursor.com/docs/cli/reference/parameters>
 
 ## Gemini 3.8 Flash notes
 
