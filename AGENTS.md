@@ -39,7 +39,7 @@ This repository is a pnpm workspace (see `pnpm-workspace.yaml`).
 - **Install:** `pnpm install`
 - **Add dependency:** current package `pnpm add <pkg>`; dev `pnpm add -D <pkg>`; workspace root `pnpm add -w <pkg>`
 - **Run scripts:** this package `pnpm <script>`; all packages `pnpm -r <script>`; one package `pnpm --filter <pkg-name> <script>`
-- **Local packages:** use the `workspace:` protocol in `package.json` (e.g. `"@my-scope/common": "workspace:*"`)
+- **Local packages:** use the `workspace:` protocol in `package.json` (e.g. `"@my-scope/server": "workspace:*"`)
 
 pnpm’s layout is strict (no undeclared deps) and efficient (content-addressable store).
 

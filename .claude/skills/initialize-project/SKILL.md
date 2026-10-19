@@ -58,7 +58,7 @@ At minimum:
    - repository metadata when explicitly supplied or requested
 2. Update workspace package manifests:
    - Replace template-specific package names with names consistent with the new project.
-   - For the existing `common` package, an unscoped project named `my-project` normally maps to `@my-project/common` unless the user specifies a different package scope.
+   - For each workspace package under `packages/*`, rename it consistently with the new project, for example `@my-project/server`.
    - Keep license metadata aligned with the root package.
 3. Replace README placeholders:
    - `{PROJECT_NAME}` → project name
@@ -102,7 +102,7 @@ A typical result is:
 
 - Root package name: `json-fixer`
 - Root description: `A CLI tool that repairs malformed JSON.`
-- Existing `common` package renamed consistently, for example `@json-fixer/common`
+- Existing `packages/proxy` package renamed consistently, for example `@json-fixer/server`
 - README placeholders replaced
 - Existing Apache-2.0 license preserved unless the user requested another license
 - Lockfile refreshed

@@ -30,9 +30,9 @@ An autonomous loop for the agent to identify, analyze, and fix failing unit test
 
 ### Scenario: Fixing a logic error
 
-1. `pnpm test` fails in `packages/common/src/math.test.ts` because `add(2, 2)` returned `5`.
-2. Agent analyzes `packages/common/src/math.ts` and finds a typo `a + b + 1`.
-3. Agent fixes the typo to `a + b`.
+1. `pnpm test` fails in `packages/proxy/src/server.test.ts` because a response returned 201 where the test expects 200.
+2. Agent analyzes `packages/proxy/src/app.ts` and finds `json(201, ...)`.
+3. Agent changes `201` to `200`.
 4. `pnpm test` passes.
 
 ### Scenario: Updating a test after a deliberate change
