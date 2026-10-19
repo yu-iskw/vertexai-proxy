@@ -11,6 +11,7 @@ The CLI authenticates with a Cursor account or Cursor API key and speaks Cursor'
 - `cursor-agent` and `agent` are the terminal agent CLI. `cursor` is the Cursor IDE CLI, and `cursor agent` starts the same terminal agent.
 - The proxy exposes OpenAI-compatible HTTP routes. The CLI does not use those routes.
 - For the desktop Cursor IDE path, see [`docs/cursor-ide.md`](cursor-ide.md).
+- The proxy accepts `--project`, `--location`, `--models`, and `--impersonate-service-account`; flags override environment variables. For impersonation, keep plain ADC and pass `--impersonate-service-account "<sa>@<your-project-id>.iam.gserviceaccount.com"`. The caller needs `roles/iam.serviceAccountTokenCreator` on the target service account.
 
 ## Step 1: Check the installed CLI
 

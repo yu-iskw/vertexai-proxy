@@ -8,7 +8,7 @@ The implementation is in `packages/proxy` and uses Node.js 22+ with `google-auth
 pnpm install
 pnpm --filter @vertexai-proxy/server build
 gcloud auth application-default login
-export GOOGLE_CLOUD_PROJECT="your-project"
+export GOOGLE_CLOUD_PROJECT="<your-project-id>"
 export VERTEX_LOCATION="global"
 pnpm --filter @vertexai-proxy/server start
 ```
@@ -21,13 +21,29 @@ vertexai-proxy API key: <generated-key>
 
 Copy that key and send it as `Authorization: Bearer <generated-key>`. The key is regenerated every time the process starts, so restarting the proxy invalidates the old key.
 
-For **optional keyless service account impersonation**, replace the ADC login with:
+## Configuration
+
+Flags override environment variables.
+
+| Option                                  | Environment                   | Default        |
+| --------------------------------------- | ----------------------------- | -------------- |
+| `--project <id>`                        | `GOOGLE_CLOUD_PROJECT`        | required       |
+| `--location <region>`                   | `VERTEX_LOCATION`             | `global`       |
+| `--models <ids>`                        | `VERTEX_MODELS`               | predefined map |
+| `--impersonate-service-account <email>` | `IMPERSONATE_SERVICE_ACCOUNT` | none           |
+| `-h, --help`                            |                               |                |
+
+`--models` accepts the same comma-separated syntax as `VERTEX_MODELS` and restricts the available set. `PROXY_PORT` sets the listen port and has no flag.
+
+For optional service account impersonation, keep plain ADC and pass the target service account:
 
 ```bash
-gcloud auth application-default login --impersonate-service-account=vertex-proxy@your-project.iam.gserviceaccount.com
+pnpm --filter @vertexai-proxy/server start -- \
+  --project "<your-project-id>" \
+  --impersonate-service-account "<sa>@<your-project-id>.iam.gserviceaccount.com"
 ```
 
-The caller needs `roles/iam.serviceAccountTokenCreator` on the target service account; the service account needs Vertex AI inference permissions in the inference project. Ensure relevant APIs and model access are enabled.
+The proxy uses the plain ADC client as the source and google-auth-library `Impersonated` for the target. The caller needs `roles/iam.serviceAccountTokenCreator` on the target service account. The service account needs Vertex AI inference permissions.
 
 Use `http://127.0.0.1:8765/v1` as the OpenAI-compatible base URL and the printed key as the bearer token.
 

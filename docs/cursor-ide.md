@@ -25,6 +25,8 @@ pnpm --filter @vertexai-proxy/server start
 
 The proxy prints its API key once at startup. The key is regenerated at every start and is mandatory for every `/v1` request.
 
+The proxy also accepts `--project`, `--location`, `--models`, and `--impersonate-service-account`; flags override environment variables. For impersonation, keep plain ADC and pass `--impersonate-service-account "<sa>@<your-project-id>.iam.gserviceaccount.com"`. The caller needs `roles/iam.serviceAccountTokenCreator` on the target service account.
+
 The alias format accepts dots and hyphens, so `vx-gemini-3.8-flash` and `vx-sonnet-5-5` are valid.
 
 ## Step 2: Expose the proxy on public HTTPS

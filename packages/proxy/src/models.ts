@@ -27,18 +27,18 @@ function defaultModels(): Map<string, ModelDefinition> {
   return new Map([...DEFAULT_MODELS].map(([alias, definition]) => [alias, { ...definition }]));
 }
 
-function parseTarget(alias: string, target: string): ModelDefinition {
+function parseTarget(alias: string, target: string, source: string): ModelDefinition {
   const slash = target.indexOf('/');
   if (slash <= 0 || slash === target.length - 1) {
-    throw new Error(`Invalid VERTEX_MODELS entry "${alias}=${target}". Use alias=provider/model.`);
+    throw new Error(`Invalid ${source} entry "${alias}=${target}". Use alias=provider/model.`);
   }
   const provider = target.slice(0, slash);
   const model = target.slice(slash + 1);
   if (!PROVIDERS.includes(provider as ModelProvider)) {
-    throw new Error(`Invalid VERTEX_MODELS provider "${provider}". Use gemini or claude.`);
+    throw new Error(`Invalid ${source} provider "${provider}". Use gemini or claude.`);
   }
   if (!MODEL_ID_PATTERN.test(model)) {
-    throw new Error(`Invalid VERTEX_MODELS model id "${model}".`);
+    throw new Error(`Invalid ${source} model id "${model}".`);
   }
   return { provider: provider as ModelProvider, model };
 }
@@ -53,30 +53,33 @@ function addDefault(models: Map<string, ModelDefinition>, alias: string): void {
   models.set(alias, { ...definition });
 }
 
-function addEntry(models: Map<string, ModelDefinition>, rawEntry: string): void {
+function addEntry(models: Map<string, ModelDefinition>, rawEntry: string, source: string): void {
   const entry = rawEntry.trim();
-  if (entry === '') throw new Error('VERTEX_MODELS contains an empty entry.');
+  if (entry === '') throw new Error(`${source} contains an empty entry.`);
 
   const equals = entry.indexOf('=');
   const alias = (equals === -1 ? entry : entry.slice(0, equals)).trim();
   if (!MODEL_ID_PATTERN.test(alias)) {
-    throw new Error(`Invalid VERTEX_MODELS alias "${alias}".`);
+    throw new Error(`Invalid ${source} alias "${alias}".`);
   }
   if (models.has(alias)) {
-    throw new Error(`Duplicate VERTEX_MODELS alias "${alias}".`);
+    throw new Error(`Duplicate ${source} alias "${alias}".`);
   }
 
   if (equals === -1) {
     addDefault(models, alias);
     return;
   }
-  models.set(alias, parseTarget(alias, entry.slice(equals + 1).trim()));
+  models.set(alias, parseTarget(alias, entry.slice(equals + 1).trim(), source));
 }
 
-export function resolveModels(raw: string | undefined): ReadonlyMap<string, ModelDefinition> {
+export function resolveModels(
+  raw: string | undefined,
+  source = 'VERTEX_MODELS',
+): ReadonlyMap<string, ModelDefinition> {
   if (raw === undefined || raw.trim() === '') return defaultModels();
 
   const models = new Map<string, ModelDefinition>();
-  for (const rawEntry of raw.split(',')) addEntry(models, rawEntry);
+  for (const rawEntry of raw.split(',')) addEntry(models, rawEntry, source);
   return models;
 }

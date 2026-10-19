@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Usage: GOOGLE_CLOUD_PROJECT="<your-project-id>" [IMPERSONATE_SERVICE_ACCOUNT="<sa>@<your-project-id>.iam.gserviceaccount.com"] [E2E_MODELS=...] [VERTEX_LOCATION=global] [PROXY_PORT=8765] bash dev/e2e.sh
 set -euo pipefail
 
 if [[ -z ${GOOGLE_CLOUD_PROJECT-} ]]; then
@@ -65,6 +66,7 @@ echo "Starting proxy on port ${PROXY_PORT}"
 GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT}" \
 	VERTEX_LOCATION="${VERTEX_LOCATION}" \
 	VERTEX_MODELS="${E2E_MODELS}" \
+	IMPERSONATE_SERVICE_ACCOUNT="${IMPERSONATE_SERVICE_ACCOUNT-}" \
 	PROXY_PORT="${PROXY_PORT}" \
 	node packages/proxy/dist/server.js >"${LOG_FILE}" 2>&1 &
 PROXY_PID=$!

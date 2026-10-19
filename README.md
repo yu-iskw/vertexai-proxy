@@ -40,6 +40,18 @@ OpenAI clients use base URL `http://127.0.0.1:8765/v1` and the printed key.
 
 `PROXY_PORT` defaults to `8765`. `VERTEX_LOCATION` defaults to `global`. Regional locations such as `us-central1` are accepted, but model availability varies by region. For `gemini-3.8-flash`, use `global`. See [`docs/typescript-proxy.md`](docs/typescript-proxy.md).
 
+## Configuration
+
+Flags override environment variables:
+
+- `--project <id>` or `GOOGLE_CLOUD_PROJECT`
+- `--location <region>` or `VERTEX_LOCATION`, default `global`
+- `--models <ids>` or `VERTEX_MODELS`, restricting the predefined map
+- `--impersonate-service-account <email>` or `IMPERSONATE_SERVICE_ACCOUNT`
+- `-h, --help`
+
+For service account impersonation, keep plain ADC and pass `--impersonate-service-account "<sa>@<your-project-id>.iam.gserviceaccount.com"`. The caller needs `roles/iam.serviceAccountTokenCreator` on the target service account.
+
 ## Models
 
 The proxy ships with a predefined Gemini and Claude model map. See [`docs/typescript-proxy.md`](docs/typescript-proxy.md) for the full list.
