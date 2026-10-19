@@ -49,7 +49,7 @@ pnpm test
 
 `packages/proxy` contains an OpenAI-compatible, text-only Vertex AI proxy. On startup it generates an API key and prints it once to stderr as `vertexai-proxy API key: <key>`. Send that key as `Authorization: Bearer <key>`.
 
-The proxy ships with a predefined model map and supports `VERTEX_MODELS` overrides. See [`docs/typescript-proxy.md`](docs/typescript-proxy.md) for setup, the default model list, the `VERTEX_MODELS` format, and current limitations. The Cursor CLI cannot use this proxy today. See [`docs/cursor-cli.md`](docs/cursor-cli.md) for the evidence and alternatives.
+The proxy ships with a predefined model map and supports `VERTEX_MODELS` overrides. See [`docs/typescript-proxy.md`](docs/typescript-proxy.md) for setup, the default model list, the `VERTEX_MODELS` format, and current limitations. The Cursor CLI cannot use this proxy today. See [`docs/cursor-cli.md`](docs/cursor-cli.md) for the evidence and alternatives. For the desktop Cursor IDE path, see [`docs/cursor-ide.md`](docs/cursor-ide.md).
 
 ### Linting & Formatting
 

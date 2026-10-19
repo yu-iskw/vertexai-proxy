@@ -95,6 +95,8 @@ Sources: <https://cursor.com/help/models-and-usage/api-keys> and <https://forum.
 - The Cursor desktop app override is a separate path. It needs a publicly reachable HTTPS URL, not a localhost address.
 - Other OpenAI-compatible CLIs can use this proxy with base URL `http://127.0.0.1:8765/v1` and the key printed at startup.
 
+For the desktop Cursor IDE path, see [`docs/cursor-ide.md`](cursor-ide.md).
+
 ## Gemini 3.8 Flash notes
 
 - Model ID: `gemini-3.8-flash`.
