@@ -242,6 +242,12 @@ function anthropicRequest(input: ChatRequest, model: string, base: string): Vert
   };
 }
 
+function vertexBaseUrl(project: string, location: string): string {
+  const host =
+    location === 'global' ? 'aiplatform.googleapis.com' : `${location}-aiplatform.googleapis.com`;
+  return `https://${host}/v1/projects/${project}/locations/${location}`;
+}
+
 async function callVertex(
   input: ChatRequest,
   target: ModelDefinition,
@@ -249,7 +255,7 @@ async function callVertex(
 ): Promise<VertexOutput> {
   const token = await options.getAccessToken();
   if (!token) throw new HttpError(502, 'ADC access token unavailable', 'api_error');
-  const base = `https://${options.location}-aiplatform.googleapis.com/v1/projects/${options.project}/locations/${options.location}`;
+  const base = vertexBaseUrl(options.project, options.location);
   const request =
     target.provider === 'gemini'
       ? geminiRequest(input, target.model, base)

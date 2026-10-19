@@ -16,9 +16,9 @@ export function start(): void {
   if (!PROJECT_PATTERN.test(project)) {
     throw new Error('Configure GOOGLE_CLOUD_PROJECT with a valid Google Cloud project id.');
   }
-  const location = process.env.VERTEX_LOCATION ?? 'us-central1';
-  if (!REGION_PATTERN.test(location)) {
-    throw new Error('VERTEX_LOCATION must look like us-central1.');
+  const location = process.env.VERTEX_LOCATION ?? 'global';
+  if (location !== 'global' && !REGION_PATTERN.test(location)) {
+    throw new Error('VERTEX_LOCATION must be global or look like us-central1.');
   }
   const port = Number(process.env.PROXY_PORT ?? '8765');
   if (!Number.isInteger(port) || port < 1 || port > 65535) {

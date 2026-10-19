@@ -5,12 +5,19 @@ export type ModelDefinition = {
   model: string;
 };
 
-export const DEFAULT_MODELS: ReadonlyMap<string, ModelDefinition> = new Map([
+const DEFAULT_MODELS: ReadonlyMap<string, ModelDefinition> = new Map([
+  ['gemini-4-argon', { provider: 'gemini', model: 'gemini-4-argon' }],
+  ['gemini-3.8-flash', { provider: 'gemini', model: 'gemini-3.8-flash' }],
+  ['gemini-3.7-flash', { provider: 'gemini', model: 'gemini-3.7-flash' }],
+  ['gemini-3.1-pro-preview', { provider: 'gemini', model: 'gemini-3.1-pro-preview' }],
   ['gemini-2.5-pro', { provider: 'gemini', model: 'gemini-2.5-pro' }],
   ['gemini-2.5-flash', { provider: 'gemini', model: 'gemini-2.5-flash' }],
-  ['gemini-2.0-flash', { provider: 'gemini', model: 'gemini-2.0-flash' }],
-  ['claude-sonnet-4', { provider: 'claude', model: 'claude-sonnet-4@20250514' }],
-  ['claude-3-5-haiku', { provider: 'claude', model: 'claude-3-5-haiku@20241022' }],
+  ['claude-opus-5-5', { provider: 'claude', model: 'claude-opus-5-5' }],
+  ['claude-sonnet-5-5', { provider: 'claude', model: 'claude-sonnet-5-5' }],
+  ['claude-haiku-5-5', { provider: 'claude', model: 'claude-haiku-5-5' }],
+  ['claude-fable-5-1', { provider: 'claude', model: 'claude-fable-5-1' }],
+  ['claude-opus-4-8', { provider: 'claude', model: 'claude-opus-4-8' }],
+  ['claude-sonnet-4-6', { provider: 'claude', model: 'claude-sonnet-4-6' }],
 ]);
 
 const MODEL_ID_PATTERN = /^[a-zA-Z0-9_.@-]+$/;

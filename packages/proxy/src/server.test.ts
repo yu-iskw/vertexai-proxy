@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { announceApiKey, generateApiKey } from './api-key.js';
 import { createApp, type App, type AppOptions, type FetchLike, type ProxyResponse } from './app.js';
-import { DEFAULT_MODELS, resolveModels } from './models.js';
+import { resolveModels } from './models.js';
 
 const FIXED_KEY = 'fixed-test-key';
 
@@ -113,20 +113,27 @@ describe('authentication', () => {
 
 describe('models', () => {
   it('uses the declared default model map', () => {
-    const models = resolveModels(undefined);
-
-    expect([...models.keys()]).toEqual([...DEFAULT_MODELS.keys()]);
-    expect(models.get('gemini-2.5-pro')).toEqual({
-      provider: 'gemini',
-      model: 'gemini-2.5-pro',
+    expect(Object.fromEntries(resolveModels(undefined))).toEqual({
+      'gemini-4-argon': { provider: 'gemini', model: 'gemini-4-argon' },
+      'gemini-3.8-flash': { provider: 'gemini', model: 'gemini-3.8-flash' },
+      'gemini-3.7-flash': { provider: 'gemini', model: 'gemini-3.7-flash' },
+      'gemini-3.1-pro-preview': { provider: 'gemini', model: 'gemini-3.1-pro-preview' },
+      'gemini-2.5-pro': { provider: 'gemini', model: 'gemini-2.5-pro' },
+      'gemini-2.5-flash': { provider: 'gemini', model: 'gemini-2.5-flash' },
+      'claude-opus-5-5': { provider: 'claude', model: 'claude-opus-5-5' },
+      'claude-sonnet-5-5': { provider: 'claude', model: 'claude-sonnet-5-5' },
+      'claude-haiku-5-5': { provider: 'claude', model: 'claude-haiku-5-5' },
+      'claude-fable-5-1': { provider: 'claude', model: 'claude-fable-5-1' },
+      'claude-opus-4-8': { provider: 'claude', model: 'claude-opus-4-8' },
+      'claude-sonnet-4-6': { provider: 'claude', model: 'claude-sonnet-4-6' },
     });
   });
 
   it('overrides the available set from VERTEX_MODELS', () => {
-    const models = resolveModels('fast=gemini/gemini-2.0-flash,gemini-2.5-pro');
+    const models = resolveModels('fast=gemini/gemini-3.7-flash,gemini-2.5-pro');
 
     expect([...models.keys()]).toEqual(['fast', 'gemini-2.5-pro']);
-    expect(models.get('fast')).toEqual({ provider: 'gemini', model: 'gemini-2.0-flash' });
+    expect(models.get('fast')).toEqual({ provider: 'gemini', model: 'gemini-3.7-flash' });
   });
 
   it('rejects an unknown default model id', () => {
@@ -157,7 +164,7 @@ describe('http surface', () => {
   });
 
   it('lists the configured models', async () => {
-    const { app } = makeApp({ models: resolveModels('fast=gemini/gemini-2.0-flash') });
+    const { app } = makeApp({ models: resolveModels('fast=gemini/gemini-3.7-flash') });
 
     const response = await request(app, 'GET', '/v1/models', { authorization: bearer() });
 
@@ -297,10 +304,35 @@ describe('vertex request mapping', () => {
     });
   });
 
-  it('maps a Claude request and response', async () => {
-    const { app, fetchMock } = makeApp({
-      models: resolveModels('claude=claude/claude-3-5-haiku@20241022'),
+  it('maps a Gemini 3.8 Flash request against the global endpoint', async () => {
+    const { app, fetchMock } = makeApp({ location: 'global' });
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          candidates: [{ content: { parts: [{ text: 'global' }] } }],
+          usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1 },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const response = await request(app, 'POST', '/v1/chat/completions', {
+      authorization: bearer(),
+      body: {
+        model: 'gemini-3.8-flash',
+        messages: [{ role: 'user', content: 'hi' }],
+      },
     });
+
+    expect(response.status).toBe(200);
+    const [url] = fetchMock.mock.calls[0];
+    expect(url).toBe(
+      'https://aiplatform.googleapis.com/v1/projects/test-project/locations/global/publishers/google/models/gemini-3.8-flash:generateContent',
+    );
+  });
+
+  it('maps a Claude request and response', async () => {
+    const { app, fetchMock } = makeApp();
     fetchMock.mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -313,23 +345,57 @@ describe('vertex request mapping', () => {
 
     const response = await request(app, 'POST', '/v1/chat/completions', {
       authorization: bearer(),
-      body: { model: 'claude', messages: [{ role: 'user', content: 'salut' }] },
+      body: {
+        model: 'claude-sonnet-5-5',
+        messages: [
+          { role: 'system', content: 'be brief' },
+          { role: 'user', content: 'salut' },
+        ],
+      },
     });
 
     expect(response.status).toBe(200);
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe(
-      'https://us-central1-aiplatform.googleapis.com/v1/projects/test-project/locations/us-central1/publishers/anthropic/models/claude-3-5-haiku@20241022:rawPredict',
+      'https://us-central1-aiplatform.googleapis.com/v1/projects/test-project/locations/us-central1/publishers/anthropic/models/claude-sonnet-5-5:rawPredict',
     );
     expect(parseJson(bodyText(init))).toEqual({
       anthropic_version: 'vertex-2023-10-16',
       max_tokens: 4096,
+      system: 'be brief',
       messages: [{ role: 'user', content: 'salut' }],
     });
     expect(parseJson(response.body)).toMatchObject({
-      model: 'claude',
+      model: 'claude-sonnet-5-5',
       choices: [{ message: { role: 'assistant', content: 'bonjour' } }],
       usage: { prompt_tokens: 4, completion_tokens: 1, total_tokens: 5 },
     });
+  });
+
+  it('maps a Claude request against the global endpoint', async () => {
+    const { app, fetchMock } = makeApp({ location: 'global' });
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          content: [{ type: 'text', text: 'global' }],
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const response = await request(app, 'POST', '/v1/chat/completions', {
+      authorization: bearer(),
+      body: {
+        model: 'claude-opus-5-5',
+        messages: [{ role: 'user', content: 'hi' }],
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const [url] = fetchMock.mock.calls[0];
+    expect(url).toBe(
+      'https://aiplatform.googleapis.com/v1/projects/test-project/locations/global/publishers/anthropic/models/claude-opus-5-5:rawPredict',
+    );
   });
 });
