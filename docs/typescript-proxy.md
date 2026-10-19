@@ -89,6 +89,20 @@ curl -sS http://127.0.0.1:8765/v1/chat/completions \
 
 The global endpoint is `https://aiplatform.googleapis.com/v1/projects/PROJECT_ID/locations/global`. Regional locations such as `us-central1` use `https://us-central1-aiplatform.googleapis.com/v1/projects/PROJECT_ID/locations/us-central1`.
 
+## End-to-end test
+
+Prerequisites:
+
+- ADC is configured with `gcloud auth application-default login`.
+- The model is enabled in Model Garden for your project. Claude models must be enabled separately.
+
+```bash
+GOOGLE_CLOUD_PROJECT="<your-project-id>" pnpm e2e
+E2E_MODELS=gemini-3.8-flash,claude-sonnet-5-5 GOOGLE_CLOUD_PROJECT="<your-project-id>" pnpm e2e
+```
+
+Defaults are `VERTEX_LOCATION=global`, `PROXY_PORT=8765`, and `E2E_MODELS=gemini-3.8-flash`. `E2E_MODELS` replaces the proxy's model map and accepts the same `VERTEX_MODELS` syntax. The script requires `lsof` and a free `PROXY_PORT`; a busy port exits 3. It builds the proxy, starts it from `dist`, captures the printed key from a private temporary log, and checks `/healthz`, authenticated and unauthenticated `/v1/models`, and one chat completion per model. ADC or model-access errors appear as chat failures. It stops the proxy on exit. It does not run in CI.
+
 ## Endpoints
 
 - `GET /healthz` returns `{"status":"ok"}` without authentication.
@@ -99,4 +113,4 @@ The global endpoint is `https://aiplatform.googleapis.com/v1/projects/PROJECT_ID
 
 This is a **text-only, non-streaming** initial implementation. It does **not** support tool calling, streaming, multimodal inputs, or the Responses API. These are essential for many coding agents and must be added before claiming broad compatibility. Cursor may not be able to reach a local proxy if it routes BYOK requests through remote infrastructure.
 
-Security defaults: localhost binding, a random bearer key printed at startup, an explicit model allowlist, a 1 MiB request body limit, an upstream timeout, and ADC (no downloaded service-account key). Real Vertex AI and agent integration tests remain outstanding. The Cursor CLI cannot use this proxy today. See [`docs/cursor-cli.md`](cursor-cli.md) for the evidence and alternatives.
+Security defaults: localhost binding, a random bearer key printed at startup, an explicit model allowlist, a 1 MiB request body limit, an upstream timeout, and ADC (no downloaded service-account key). Real Vertex AI and agent integration tests remain outstanding. The Cursor CLI cannot use this proxy today. See [`docs/cursor-cli.md`](cursor-cli.md) for the evidence and alternatives. The desktop Cursor IDE path is documented in [`docs/cursor-ide.md`](cursor-ide.md).

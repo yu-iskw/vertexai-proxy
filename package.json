@@ -24,6 +24,7 @@
     "security:grype": "grype .",
     "knip": "knip",
     "codeql:local": "bash dev/codeql.sh",
+    "e2e": "bash dev/e2e.sh",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
     "coverage:watch": "vitest --coverage"
