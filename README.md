@@ -38,7 +38,7 @@ curl -sS http://127.0.0.1:8765/v1/chat/completions \
 
 OpenAI clients use base URL `http://127.0.0.1:8765/v1` and the printed key.
 
-`PROXY_PORT` defaults to `8765`. `VERTEX_LOCATION` defaults to `global`. Regional locations such as `us-central1` are accepted, but model availability varies by region. For `gemini-3.8-flash`, use `global`. See [`docs/typescript-proxy.md`](docs/typescript-proxy.md).
+`PROXY_PORT` defaults to `8765`. `VERTEX_LOCATION` defaults to `global`. It accepts `global`, `us`, `eu`, or a regional location such as `us-central1`. Model availability varies by region. For `gemini-3.8-flash`, use `global` or the `us`/`eu` multi-region. See [`docs/typescript-proxy.md`](docs/typescript-proxy.md).
 
 ## Configuration
 
@@ -80,7 +80,7 @@ E2E_MODELS=gemini-3.8-flash,claude-sonnet-5-5 GOOGLE_CLOUD_PROJECT="<your-projec
 
 ## Limitations
 
-The proxy is text-only. It has no SSE streaming and no tool calling, and it rejects `stream: true` with HTTP 400. The request body limit is 1 MiB. Live Vertex integration tests are not part of CI. Use `pnpm e2e` with a real project.
+The proxy is text-only. It has no SSE streaming and no tool calling, and it rejects `stream: true` with HTTP 400. A function call is reported as `finish_reason: tool_calls`, but no tool-call payload is forwarded. The request body limit is 1 MiB. Live Vertex integration tests are not part of CI. Use `pnpm e2e` with a real project.
 
 ## Development
 

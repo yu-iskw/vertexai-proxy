@@ -6,10 +6,10 @@ import { GoogleAuth, Impersonated } from 'google-auth-library';
 
 import { announceApiKey, generateApiKey } from './api-key.js';
 import { createApp } from './app.js';
+import { isSupportedLocation } from './locations.js';
 import { resolveModels, type ModelDefinition } from './models.js';
 
 const PROJECT_PATTERN = /^[a-z][a-z0-9-]{4,62}$/;
-const REGION_PATTERN = /^[a-z]+-[a-z]+[0-9]+$/;
 const SERVICE_ACCOUNT_PATTERN = /^[^@\s]+@[^@\s]+\.iam\.gserviceaccount\.com$/;
 export const CLOUD_PLATFORM_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
 
@@ -17,7 +17,7 @@ const USAGE = `Usage: vertexai-proxy [options]
 
 Options:
   --project <id>                         Google Cloud project ID (env: GOOGLE_CLOUD_PROJECT)
-  --location <region>                    Vertex AI location (env: VERTEX_LOCATION, default: global)
+  --location <location>                  global, us, eu, or a region (env: VERTEX_LOCATION, default: global)
   --models <ids>                         Comma-separated model IDs (env: VERTEX_MODELS)
   --impersonate-service-account <email>  Target service account (env: IMPERSONATE_SERVICE_ACCOUNT)
   -h, --help                             Show this help
@@ -71,8 +71,10 @@ function resolveProject(value: string | undefined, env: NodeJS.ProcessEnv): stri
 
 function resolveLocation(value: string | undefined, env: NodeJS.ProcessEnv): string {
   const location = (value ?? env.VERTEX_LOCATION ?? 'global').trim();
-  if (location !== 'global' && !REGION_PATTERN.test(location)) {
-    throw new Error('VERTEX_LOCATION or --location must be global or look like us-central1.');
+  if (!isSupportedLocation(location)) {
+    throw new Error(
+      'VERTEX_LOCATION or --location must be global, us, eu, or look like us-central1.',
+    );
   }
   return location;
 }

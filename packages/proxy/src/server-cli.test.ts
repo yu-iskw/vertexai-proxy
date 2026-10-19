@@ -70,9 +70,13 @@ describe('cli', () => {
     expect(() => parseCli(['--unknown'], {})).toThrow(/Invalid arguments/);
   });
 
+  it.each(['us', 'eu'])('accepts multi-region location %s', (location) => {
+    expect(options(['--project', PROJECT, '--location', location], {}).location).toBe(location);
+  });
+
   it('rejects an invalid location', () => {
     expect(() => parseCli(['--project', PROJECT, '--location', 'us-central'], {})).toThrow(
-      /global or look like us-central1/,
+      /global, us, eu/,
     );
   });
 

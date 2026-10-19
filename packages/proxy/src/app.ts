@@ -1,5 +1,7 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 
+import { vertexHost } from './locations.js';
+
 import type { ModelDefinition } from './models.js';
 
 type MessageRole = 'system' | 'user' | 'assistant';
@@ -47,7 +49,9 @@ export type App = {
 };
 
 type JsonRecord = Record<string, unknown>;
-type VertexOutput = { text: string; tokens: { input: number; output: number } };
+type FinishReason = 'stop' | 'length' | 'content_filter' | 'tool_calls';
+type VertexTokens = { input: number; output: number; total: number };
+type VertexOutput = { text: string; tokens: VertexTokens; finishReason: FinishReason };
 type VertexRequest = { url: string; payload: unknown };
 
 const ROLE_SYSTEM = 'system';
@@ -151,8 +155,70 @@ function textOf(message: ChatMessage): string {
   return message.content.map((part) => part.text ?? '').join('\n');
 }
 
+export function mapGeminiFinishReason(raw: unknown, hasFunctionCall = false): FinishReason {
+  switch (typeof raw === 'string' ? raw.toUpperCase() : '') {
+    case 'MAX_TOKENS':
+      return 'length';
+    case 'SAFETY':
+    case 'RECITATION':
+    case 'BLOCKLIST':
+    case 'PROHIBITED_CONTENT':
+    case 'SPII':
+      return 'content_filter';
+    case 'STOP':
+      return hasFunctionCall ? 'tool_calls' : 'stop';
+    default:
+      return hasFunctionCall ? 'tool_calls' : 'stop';
+  }
+}
+
+export function mapAnthropicFinishReason(raw: unknown): FinishReason {
+  switch (typeof raw === 'string' ? raw : '') {
+    case 'max_tokens':
+      return 'length';
+    case 'tool_use':
+      return 'tool_calls';
+    case 'refusal':
+      return 'content_filter';
+    case 'end_turn':
+    case 'stop_sequence':
+      return 'stop';
+    default:
+      return 'stop';
+  }
+}
+
+function numberOrZero(value: unknown): number {
+  return typeof value === 'number' ? value : 0;
+}
+
+function hasFunctionCall(parts: unknown): boolean {
+  return (
+    Array.isArray(parts) && parts.some((part) => isRecord(part) && isRecord(part.functionCall))
+  );
+}
+
+function geminiTokens(usage: JsonRecord | undefined): VertexTokens {
+  const input = numberOrZero(usage?.promptTokenCount);
+  const output =
+    numberOrZero(usage?.candidatesTokenCount) + numberOrZero(usage?.thoughtsTokenCount);
+  const total = typeof usage?.totalTokenCount === 'number' ? usage.totalTokenCount : input + output;
+  return { input, output, total };
+}
+
+function geminiFinishReason(data: JsonRecord, first: unknown, parts: unknown): FinishReason {
+  const raw = isRecord(first)
+    ? first.finishReason
+    : isRecord(data.promptFeedback)
+      ? data.promptFeedback.blockReason
+      : undefined;
+  return mapGeminiFinishReason(raw, hasFunctionCall(parts));
+}
+
 function geminiOutput(data: unknown): VertexOutput {
-  if (!isRecord(data)) return { text: '', tokens: { input: 0, output: 0 } };
+  if (!isRecord(data)) {
+    return { text: '', tokens: { input: 0, output: 0, total: 0 }, finishReason: 'stop' };
+  }
   const candidates = data.candidates;
   const first: unknown = Array.isArray(candidates) ? (candidates[0] as unknown) : undefined;
   const content = isRecord(first) ? first.content : undefined;
@@ -163,19 +229,17 @@ function geminiOutput(data: unknown): VertexOutput {
         .join('')
     : '';
   const usage = isRecord(data.usageMetadata) ? data.usageMetadata : undefined;
-  const input = usage?.promptTokenCount;
-  const output = usage?.candidatesTokenCount;
   return {
     text,
-    tokens: {
-      input: typeof input === 'number' ? input : 0,
-      output: typeof output === 'number' ? output : 0,
-    },
+    tokens: geminiTokens(usage),
+    finishReason: geminiFinishReason(data, first, parts),
   };
 }
 
 function anthropicOutput(data: unknown): VertexOutput {
-  if (!isRecord(data)) return { text: '', tokens: { input: 0, output: 0 } };
+  if (!isRecord(data)) {
+    return { text: '', tokens: { input: 0, output: 0, total: 0 }, finishReason: 'stop' };
+  }
   const content = data.content;
   const text = Array.isArray(content)
     ? content
@@ -187,14 +251,12 @@ function anthropicOutput(data: unknown): VertexOutput {
         .join('')
     : '';
   const usage = isRecord(data.usage) ? data.usage : undefined;
-  const input = usage?.input_tokens;
-  const output = usage?.output_tokens;
+  const input = numberOrZero(usage?.input_tokens);
+  const output = numberOrZero(usage?.output_tokens);
   return {
     text,
-    tokens: {
-      input: typeof input === 'number' ? input : 0,
-      output: typeof output === 'number' ? output : 0,
-    },
+    tokens: { input, output, total: input + output },
+    finishReason: mapAnthropicFinishReason(data.stop_reason),
   };
 }
 
@@ -243,9 +305,7 @@ function anthropicRequest(input: ChatRequest, model: string, base: string): Vert
 }
 
 function vertexBaseUrl(project: string, location: string): string {
-  const host =
-    location === 'global' ? 'aiplatform.googleapis.com' : `${location}-aiplatform.googleapis.com`;
-  return `https://${host}/v1/projects/${project}/locations/${location}`;
+  return `https://${vertexHost(location)}/v1/projects/${project}/locations/${location}`;
 }
 
 async function callVertex(
@@ -332,13 +392,13 @@ export function createApp(options: AppOptions): App {
             {
               index: 0,
               message: { role: ROLE_ASSISTANT, content: output.text },
-              finish_reason: 'stop',
+              finish_reason: output.finishReason,
             },
           ],
           usage: {
             prompt_tokens: output.tokens.input,
             completion_tokens: output.tokens.output,
-            total_tokens: output.tokens.input + output.tokens.output,
+            total_tokens: output.tokens.total,
           },
         });
       } catch (cause) {

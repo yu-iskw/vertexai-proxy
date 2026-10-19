@@ -33,7 +33,7 @@ Flags override environment variables.
 | `--impersonate-service-account <email>` | `IMPERSONATE_SERVICE_ACCOUNT` | none           |
 | `-h, --help`                            |                               |                |
 
-`--models` accepts the same comma-separated syntax as `VERTEX_MODELS` and restricts the available set. `PROXY_PORT` sets the listen port and has no flag.
+`--models` accepts the same comma-separated syntax as `VERTEX_MODELS` and restricts the available set. `--location` and `VERTEX_LOCATION` accept `global`, `us`, `eu`, or a regional location such as `us-central1`. `PROXY_PORT` sets the listen port and has no flag.
 
 For optional service account impersonation, keep plain ADC and pass the target service account:
 
@@ -84,7 +84,7 @@ If `VERTEX_MODELS` is unset or empty, the default map is used. Invalid input fai
 
 ## Run with Gemini 3.8 Flash
 
-For `gemini-3.8-flash`, use the global location.
+For `gemini-3.8-flash`, use `global` or the `us`/`eu` multi-region.
 
 ```bash
 export GOOGLE_CLOUD_PROJECT="<your-project-id>"
@@ -103,7 +103,7 @@ curl -sS http://127.0.0.1:8765/v1/chat/completions \
   -d '{"model":"gemini-3.8-flash","messages":[{"role":"user","content":"Hello"}]}'
 ```
 
-The global endpoint is `https://aiplatform.googleapis.com/v1/projects/PROJECT_ID/locations/global`. Regional locations such as `us-central1` use `https://us-central1-aiplatform.googleapis.com/v1/projects/PROJECT_ID/locations/us-central1`.
+The global endpoint is `https://aiplatform.googleapis.com/v1/projects/PROJECT_ID/locations/global`. Multi-region `us` and `eu` use `https://aiplatform.us.rep.googleapis.com/v1/projects/PROJECT_ID/locations/us` and `https://aiplatform.eu.rep.googleapis.com/v1/projects/PROJECT_ID/locations/eu`. Regional locations such as `us-central1` use `https://us-central1-aiplatform.googleapis.com/v1/projects/PROJECT_ID/locations/us-central1`.
 
 ## End-to-end test
 
@@ -127,6 +127,6 @@ Defaults are `VERTEX_LOCATION=global`, `PROXY_PORT=8765`, and `E2E_MODELS=gemini
 
 ## Scope and limitations
 
-This is a **text-only, non-streaming** initial implementation. It does **not** support tool calling, streaming, multimodal inputs, or the Responses API. These are essential for many coding agents and must be added before claiming broad compatibility. Cursor may not be able to reach a local proxy if it routes BYOK requests through remote infrastructure.
+This is a **text-only, non-streaming** initial implementation. It does **not** support tool calling, streaming, multimodal inputs, or the Responses API. A function call is reported as `finish_reason: tool_calls`, but no tool-call payload is forwarded. These are essential for many coding agents and must be added before claiming broad compatibility. Cursor may not be able to reach a local proxy if it routes BYOK requests through remote infrastructure.
 
 Security defaults: localhost binding, a random bearer key printed at startup, an explicit model allowlist, a 1 MiB request body limit, an upstream timeout, and ADC (no downloaded service-account key). Real Vertex AI and agent integration tests remain outstanding. The Cursor CLI cannot use this proxy today. See [`docs/cursor-cli.md`](cursor-cli.md) for the evidence and alternatives. The desktop Cursor IDE path is documented in [`docs/cursor-ide.md`](cursor-ide.md).

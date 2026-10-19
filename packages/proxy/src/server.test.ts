@@ -3,7 +3,15 @@ import { Readable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 
 import { announceApiKey, generateApiKey } from './api-key.js';
-import { createApp, type App, type AppOptions, type FetchLike, type ProxyResponse } from './app.js';
+import {
+  createApp,
+  mapAnthropicFinishReason,
+  mapGeminiFinishReason,
+  type App,
+  type AppOptions,
+  type FetchLike,
+  type ProxyResponse,
+} from './app.js';
 import { resolveModels } from './models.js';
 
 const FIXED_KEY = 'fixed-test-key';
@@ -245,6 +253,31 @@ describe('http surface', () => {
   });
 });
 
+describe('finish reasons', () => {
+  it('maps Gemini finish reasons', () => {
+    expect(mapGeminiFinishReason('STOP')).toBe('stop');
+    expect(mapGeminiFinishReason('MAX_TOKENS')).toBe('length');
+    expect(mapGeminiFinishReason('SAFETY')).toBe('content_filter');
+    expect(mapGeminiFinishReason('RECITATION')).toBe('content_filter');
+    expect(mapGeminiFinishReason('BLOCKLIST')).toBe('content_filter');
+    expect(mapGeminiFinishReason('PROHIBITED_CONTENT')).toBe('content_filter');
+    expect(mapGeminiFinishReason('SPII')).toBe('content_filter');
+    expect(mapGeminiFinishReason('STOP', true)).toBe('tool_calls');
+    expect(mapGeminiFinishReason('MAX_TOKENS', true)).toBe('length');
+    expect(mapGeminiFinishReason('SAFETY', true)).toBe('content_filter');
+    expect(mapGeminiFinishReason(undefined)).toBe('stop');
+  });
+
+  it('maps Claude finish reasons', () => {
+    expect(mapAnthropicFinishReason('end_turn')).toBe('stop');
+    expect(mapAnthropicFinishReason('stop_sequence')).toBe('stop');
+    expect(mapAnthropicFinishReason('max_tokens')).toBe('length');
+    expect(mapAnthropicFinishReason('tool_use')).toBe('tool_calls');
+    expect(mapAnthropicFinishReason('refusal')).toBe('content_filter');
+    expect(mapAnthropicFinishReason(undefined)).toBe('stop');
+  });
+});
+
 describe('vertex request mapping', () => {
   it('maps a Gemini request and response', async () => {
     const { app, fetchMock } = makeApp();
@@ -331,12 +364,149 @@ describe('vertex request mapping', () => {
     );
   });
 
+  it.each([
+    ['us', 'https://aiplatform.us.rep.googleapis.com'],
+    ['eu', 'https://aiplatform.eu.rep.googleapis.com'],
+  ])('builds the multi-region URL for %s', async (location, host) => {
+    const { app, fetchMock } = makeApp({ location });
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }), {
+        status: 200,
+      }),
+    );
+
+    const response = await request(app, 'POST', '/v1/chat/completions', {
+      authorization: bearer(),
+      body: {
+        model: 'gemini-3.8-flash',
+        messages: [{ role: 'user', content: 'hi' }],
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const [url] = fetchMock.mock.calls[0];
+    expect(url).toBe(
+      `${host}/v1/projects/test-project/locations/${location}/publishers/google/models/gemini-3.8-flash:generateContent`,
+    );
+  });
+
+  it('adds Gemini thoughts tokens and preserves total tokens', async () => {
+    const { app, fetchMock } = makeApp();
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          candidates: [{ content: { parts: [{ text: 'thinking' }] }, finishReason: 'STOP' }],
+          usageMetadata: {
+            promptTokenCount: 3,
+            candidatesTokenCount: 2,
+            thoughtsTokenCount: 4,
+            totalTokenCount: 11,
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const response = await request(app, 'POST', '/v1/chat/completions', {
+      authorization: bearer(),
+      body: {
+        model: 'gemini-3.8-flash',
+        messages: [{ role: 'user', content: 'hi' }],
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(parseJson(response.body)).toMatchObject({
+      choices: [{ finish_reason: 'stop' }],
+      usage: { prompt_tokens: 3, completion_tokens: 6, total_tokens: 11 },
+    });
+  });
+
+  it('uses the upstream Gemini finish reason', async () => {
+    const { app, fetchMock } = makeApp();
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          candidates: [{ content: { parts: [{ text: 'cut' }] }, finishReason: 'MAX_TOKENS' }],
+          usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1 },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const response = await request(app, 'POST', '/v1/chat/completions', {
+      authorization: bearer(),
+      body: {
+        model: 'gemini-3.8-flash',
+        messages: [{ role: 'user', content: 'hi' }],
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(parseJson(response.body)).toMatchObject({
+      choices: [{ finish_reason: 'length' }],
+    });
+  });
+
+  it('maps a Gemini prompt block to content_filter', async () => {
+    const { app, fetchMock } = makeApp();
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ promptFeedback: { blockReason: 'SAFETY' } }), {
+        status: 200,
+      }),
+    );
+
+    const response = await request(app, 'POST', '/v1/chat/completions', {
+      authorization: bearer(),
+      body: {
+        model: 'gemini-3.8-flash',
+        messages: [{ role: 'user', content: 'hi' }],
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(parseJson(response.body)).toMatchObject({
+      choices: [{ message: { content: '' }, finish_reason: 'content_filter' }],
+    });
+  });
+
+  it('maps a Gemini function call to tool_calls', async () => {
+    const { app, fetchMock } = makeApp();
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: { parts: [{ functionCall: { name: 'lookup', args: {} } }] },
+              finishReason: 'STOP',
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const response = await request(app, 'POST', '/v1/chat/completions', {
+      authorization: bearer(),
+      body: {
+        model: 'gemini-3.8-flash',
+        messages: [{ role: 'user', content: 'hi' }],
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(parseJson(response.body)).toMatchObject({
+      choices: [{ finish_reason: 'tool_calls' }],
+    });
+  });
+
   it('maps a Claude request and response', async () => {
     const { app, fetchMock } = makeApp();
     fetchMock.mockResolvedValue(
       new Response(
         JSON.stringify({
           content: [{ type: 'text', text: 'bonjour' }],
+          stop_reason: 'max_tokens',
           usage: { input_tokens: 4, output_tokens: 1 },
         }),
         { status: 200 },
@@ -367,7 +537,7 @@ describe('vertex request mapping', () => {
     });
     expect(parseJson(response.body)).toMatchObject({
       model: 'claude-sonnet-5-5',
-      choices: [{ message: { role: 'assistant', content: 'bonjour' } }],
+      choices: [{ message: { role: 'assistant', content: 'bonjour' }, finish_reason: 'length' }],
       usage: { prompt_tokens: 4, completion_tokens: 1, total_tokens: 5 },
     });
   });
