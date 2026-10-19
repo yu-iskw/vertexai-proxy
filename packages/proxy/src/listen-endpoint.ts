@@ -1,9 +1,9 @@
 const LISTEN_HOSTS = ['127.0.0.1', '0.0.0.0'] as const;
 const DEFAULT_PORT = 8765;
 
-export type ListenHost = (typeof LISTEN_HOSTS)[number];
+type ListenHost = (typeof LISTEN_HOSTS)[number];
 
-export type ListenEndpoint = {
+type ListenEndpoint = {
   readonly host: ListenHost;
   readonly port: number;
 };
