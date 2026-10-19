@@ -83,7 +83,6 @@ Linting and formatting use Trunk. Dependency installs use the pnpm 11 supply-cha
 ## Project structure
 
 - `packages/proxy`: OpenAI-compatible Vertex AI proxy.
-- `packages/common`: template scaffold, not used by the proxy.
 - `dev/e2e.sh`: live Vertex end-to-end script.
 - `dev/codeql.sh`: local CodeQL helper.
 - `docs/`: proxy, Cursor IDE, and Cursor CLI guides.
