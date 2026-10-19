@@ -4,7 +4,28 @@ import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { resolveApiKey, validateApiKey, writeStateFile } from './api-key-state.js';
+import {
+  apiKeyBootstrapText,
+  resolveApiKey,
+  validateApiKey,
+  writeStateFile,
+} from './api-key-state.js';
+
+describe('apiKeyBootstrapText', () => {
+  const apiKey = 'fixed-key-at-least-16-chars';
+
+  it('does not produce a bootstrap line for an env-sourced key', () => {
+    expect(apiKeyBootstrapText('env', apiKey)).toBeUndefined();
+  });
+
+  it('prints a generated key', () => {
+    expect(apiKeyBootstrapText('generated', apiKey)).toBe(`API key: ${apiKey}`);
+  });
+
+  it('prints a state-file key', () => {
+    expect(apiKeyBootstrapText('state-file', apiKey)).toBe(`API key: ${apiKey}`);
+  });
+});
 
 describe('validateApiKey', () => {
   it('rejects short keys', () => {
