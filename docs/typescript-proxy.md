@@ -68,10 +68,10 @@ If `VERTEX_MODELS` is unset or empty, the default map is used. Invalid input fai
 
 ## Run with Gemini 3.8 Flash
 
-For project `ubie-yu-sandbox` with `gemini-3.8-flash`, use the global location.
+For `gemini-3.8-flash`, use the global location.
 
 ```bash
-export GOOGLE_CLOUD_PROJECT="ubie-yu-sandbox"
+export GOOGLE_CLOUD_PROJECT="<your-project-id>"
 export VERTEX_LOCATION="global"
 export VERTEX_MODELS="gemini-3.8-flash"
 pnpm --filter @vertexai-proxy/server start
