@@ -9,7 +9,7 @@ pnpm install
 pnpm --filter @vertexai-proxy/server build
 gcloud auth application-default login
 export GOOGLE_CLOUD_PROJECT="your-project"
-export VERTEX_LOCATION="us-east5"
+export VERTEX_LOCATION="global"
 pnpm --filter @vertexai-proxy/server start
 ```
 
@@ -35,25 +35,59 @@ Use `http://127.0.0.1:8765/v1` as the OpenAI-compatible base URL and the printed
 
 The proxy ships with a predefined model map. Each entry maps an OpenAI-style model id to a Vertex AI provider and model id.
 
-| Alias              | Provider | Vertex model                |
-| ------------------ | -------- | --------------------------- |
-| `gemini-2.5-pro`   | `gemini` | `gemini-2.5-pro`            |
-| `gemini-2.5-flash` | `gemini` | `gemini-2.5-flash`          |
-| `gemini-2.0-flash` | `gemini` | `gemini-2.0-flash`          |
-| `claude-sonnet-4`  | `claude` | `claude-sonnet-4@20250514`  |
-| `claude-3-5-haiku` | `claude` | `claude-3-5-haiku@20241022` |
+| Alias                    | Provider | Vertex model             |
+| ------------------------ | -------- | ------------------------ |
+| `gemini-4-argon`         | `gemini` | `gemini-4-argon`         |
+| `gemini-3.8-flash`       | `gemini` | `gemini-3.8-flash`       |
+| `gemini-3.7-flash`       | `gemini` | `gemini-3.7-flash`       |
+| `gemini-3.1-pro-preview` | `gemini` | `gemini-3.1-pro-preview` |
+| `gemini-2.5-pro`         | `gemini` | `gemini-2.5-pro`         |
+| `gemini-2.5-flash`       | `gemini` | `gemini-2.5-flash`       |
+| `claude-opus-5-5`        | `claude` | `claude-opus-5-5`        |
+| `claude-sonnet-5-5`      | `claude` | `claude-sonnet-5-5`      |
+| `claude-haiku-5-5`       | `claude` | `claude-haiku-5-5`       |
+| `claude-fable-5-1`       | `claude` | `claude-fable-5-1`       |
+| `claude-opus-4-8`        | `claude` | `claude-opus-4-8`        |
+| `claude-sonnet-4-6`      | `claude` | `claude-sonnet-4-6`      |
+
+Gemini models use the `google` publisher and `:generateContent`. Claude models use the `anthropic` publisher, `:rawPredict`, and `anthropic_version` `vertex-2023-10-16`.
+
+Sources: [Gemini model catalog](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/google-models), [Gemini 4 Argon](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-4-argon), [Gemini 3.8 Flash](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-3-8-flash), [Claude on Vertex AI](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/partner-models/claude/use-claude), and [Vertex AI locations](https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/locations).
 
 Set `VERTEX_MODELS` to override the available set. The value is a comma-separated list of entries:
 
-- A bare id selects an entry from the default map, for example `gemini-2.5-pro`.
-- `alias=provider/model` defines or overrides an alias, for example `fast=gemini/gemini-2.0-flash`.
+- A bare id selects an entry from the default map, for example `gemini-3.8-flash`.
+- `alias=provider/model` defines or overrides an alias, for example `fast=gemini/gemini-3.7-flash`.
 - `provider` must be `gemini` or `claude`.
 
 ```bash
-export VERTEX_MODELS='gemini-2.5-pro,claude-sonnet-4,fast=gemini/gemini-2.0-flash'
+export VERTEX_MODELS='gemini-3.8-flash,claude-sonnet-5-5,fast=gemini/gemini-3.7-flash'
 ```
 
 If `VERTEX_MODELS` is unset or empty, the default map is used. Invalid input fails startup with a clear error and a non-zero exit code. An unknown model in a request returns HTTP 404 with an OpenAI-style `model_not_found` error. There is no fallback model.
+
+## Run with Gemini 3.8 Flash
+
+For project `ubie-yu-sandbox` with `gemini-3.8-flash`, use the global location.
+
+```bash
+export GOOGLE_CLOUD_PROJECT="ubie-yu-sandbox"
+export VERTEX_LOCATION="global"
+export VERTEX_MODELS="gemini-3.8-flash"
+pnpm --filter @vertexai-proxy/server start
+```
+
+Copy the printed key, then call the proxy:
+
+```bash
+export VERTEX_PROXY_KEY="<printed-key>"
+curl -sS http://127.0.0.1:8765/v1/chat/completions \
+  -H "Authorization: Bearer ${VERTEX_PROXY_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gemini-3.8-flash","messages":[{"role":"user","content":"Hello"}]}'
+```
+
+The global endpoint is `https://aiplatform.googleapis.com/v1/projects/PROJECT_ID/locations/global`. Regional locations such as `us-central1` use `https://us-central1-aiplatform.googleapis.com/v1/projects/PROJECT_ID/locations/us-central1`.
 
 ## Endpoints
 
@@ -65,4 +99,4 @@ If `VERTEX_MODELS` is unset or empty, the default map is used. Invalid input fai
 
 This is a **text-only, non-streaming** initial implementation. It does **not** support tool calling, streaming, multimodal inputs, or the Responses API. These are essential for many coding agents and must be added before claiming broad compatibility. Cursor may not be able to reach a local proxy if it routes BYOK requests through remote infrastructure.
 
-Security defaults: localhost binding, a random bearer key printed at startup, an explicit model allowlist, a 1 MiB request body limit, an upstream timeout, and ADC (no downloaded service-account key). Real Vertex AI and agent integration tests remain outstanding.
+Security defaults: localhost binding, a random bearer key printed at startup, an explicit model allowlist, a 1 MiB request body limit, an upstream timeout, and ADC (no downloaded service-account key). Real Vertex AI and agent integration tests remain outstanding. The Cursor CLI cannot use this proxy today. See [`docs/cursor-cli.md`](cursor-cli.md) for the evidence and alternatives.
