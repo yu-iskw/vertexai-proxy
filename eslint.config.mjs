@@ -167,6 +167,13 @@ export default [
     },
   },
   {
+    files: ['packages/proxy/src/api-key-state.ts', 'packages/proxy/src/logger.ts'],
+    rules: {
+      // State and log paths come from operator-controlled env vars (PROXY_STATE_FILE, PROXY_LOG_FILE).
+      'security/detect-non-literal-fs-filename': 'off',
+    },
+  },
+  {
     files: ['packages/**/*.test.ts', 'packages/**/*.test.tsx'],
     ignores: ['**/dist/**'],
     languageOptions: {
@@ -194,6 +201,7 @@ export default [
       // Tests often repeat string literals and use conditional expects; keep signal without noise.
       'vitest/no-conditional-expect': 'off',
       'sonarjs/no-duplicate-string': 'off',
+      'security/detect-non-literal-fs-filename': 'off',
       'max-lines-per-function': ['error', { max: 700 }],
       'unicorn/filename-case': unicornFilenameCase,
     },

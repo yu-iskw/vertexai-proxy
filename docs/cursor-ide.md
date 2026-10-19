@@ -23,7 +23,7 @@ export VERTEX_MODELS='vx-gemini-3.8-flash=gemini/gemini-3.8-flash,vx-sonnet-5-5=
 pnpm --filter @vertexai-proxy/server start
 ```
 
-The proxy prints its API key once at startup. The key is regenerated at every start and is mandatory for every `/v1` request.
+The proxy prints its API key once at startup (stderr and `PROXY_LOG_FILE` when set). Set `PROXY_API_KEY` for a fixed key or `PROXY_STATE_FILE` to persist a generated key across restarts. Without either, a new key is generated each start. The key is mandatory for every `/v1` request.
 
 The proxy also accepts `--project`, `--location`, `--models`, and `--impersonate-service-account`; flags override environment variables. For impersonation, keep plain ADC and pass `--impersonate-service-account "<sa>@<your-project-id>.iam.gserviceaccount.com"`. The caller needs `roles/iam.serviceAccountTokenCreator` on the target service account.
 
@@ -32,6 +32,32 @@ The alias format accepts dots and hyphens, so `vx-gemini-3.8-flash` and `vx-sonn
 ## Step 2: Expose the proxy on public HTTPS
 
 Cursor reaches the proxy from its own servers. Expose the local proxy at a public HTTPS URL. The OpenAI-compatible base URL is then `https://<your-public-host>/v1` (A).
+
+### ngrok (local dev)
+
+With the proxy on `127.0.0.1:8765`:
+
+```bash
+ngrok http 8765
+```
+
+Public URL from the ngrok dashboard (`http://127.0.0.1:4040`) or:
+
+```bash
+curl -sS http://127.0.0.1:4040/api/tunnels | rtk json /dev/stdin
+```
+
+Use **Override OpenAI Base URL** = `https://<subdomain>.ngrok-free.app/v1` (include `/v1`).
+
+Sanity check:
+
+```bash
+curl -sS -H 'ngrok-skip-browser-warning: 1' \
+  -H "Authorization: Bearer <PROXY_API_KEY>" \
+  "https://<subdomain>.ngrok-free.app/v1/models"
+```
+
+Free ngrok URLs change when you restart `ngrok` unless you use a reserved domain.
 
 ## Step 3: Configure Cursor
 
@@ -49,10 +75,45 @@ Add custom model names that exactly match the proxy's `/v1/models` IDs, for exam
 
 1. Restart Cursor.
 2. Open a new chat.
-3. Select `vx-gemini-3.8-flash` or `vx-sonnet-5-5`.
+3. Select your custom model (for example `vx-haiku-5-5`).
 4. Send a short prompt.
 
-This setup is not verified end-to-end. If Cursor sends `stream: true`, the proxy returns HTTP 400. Treat Chat as experimental until SSE streaming exists.
+## Step 6: Confirm traffic hits the proxy (logging)
+
+Access lines are **not** a separate file format. They are `info` log lines on **stderr** and, when set, appended to **`PROXY_LOG_FILE`**.
+
+Start the proxy with:
+
+```bash
+export PROXY_ACCESS_LOG=1
+export PROXY_LOG_FILE=/tmp/vertexai-proxy.log
+export PROXY_LOG_LEVEL=info
+```
+
+In another terminal:
+
+```bash
+rtk grep 'chat/completions' /tmp/vertexai-proxy.log
+# or live:
+tail -f /tmp/vertexai-proxy.log
+```
+
+After one IDE message you should see pairs like:
+
+```text
+vertexai-proxy request POST /v1/chat/completions
+vertexai-proxy response POST /v1/chat/completions 200 … model=vx-haiku-5-5 vertex_upstream_status=200 …
+```
+
+**If chat works in the IDE but the log file does not grow:**
+
+1. **Proxy not running** on the machine the tunnel forwards to (`lsof -i :8765` or `curl -sS http://127.0.0.1:8765/healthz`).
+2. **Wrong log sink** — you are watching a terminal where the proxy is not running; use `PROXY_LOG_FILE` or the stderr of the `node dist/server.js` process.
+3. **`PROXY_ACCESS_LOG=0`** — HTTP lines are suppressed.
+4. **Override URL points elsewhere** — tunnel hostname must forward to this host’s `8765`, with base URL `https://<host>/v1`.
+5. **Custom model name not on the proxy** — `GET /v1/models` from the public URL must list your ID (for example `vx-haiku-5-5`). If the list has only `claude-haiku-5-5` and never `vx-haiku-5-5`, restart the proxy with `VERTEX_MODELS` (Step 1) before trusting the IDE picker. A reply in chat does **not** prove Vertex traffic; only new `POST /v1/chat/completions` lines do.
+
+**Quick proof the override reaches this process:** stop the proxy and send another IDE message. If chat still succeeds, traffic is **not** going through your proxy.
 
 ## Known limitations
 
@@ -61,7 +122,7 @@ This setup is not verified end-to-end. If Cursor sends `stream: true`, the proxy
 - Cursor sends the key to its backend with every request because all requests are routed through Cursor's servers for final prompt building (A).
 - Zero Data Retention does not apply when you use your own keys (A).
 - The override key and base URL apply to all models, including Cursor's own models such as Composer 2. Toggle the override off before using built-in models (C).
-- The proxy is text-only and non-streaming. It has no tool calling and no SSE streaming.
+- The proxy is text-only. Chat `stream: true` is buffered into minimal OpenAI-style SSE. There is no incremental token streaming from Vertex and no tool calling.
 
 ## Sources
 

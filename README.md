@@ -27,7 +27,9 @@ The server prints its key once to stderr:
 vertexai-proxy API key: <generated-key>
 ```
 
-Send the key as `Authorization: Bearer <generated-key>`. The key is regenerated on every start.
+Send the key as `Authorization: Bearer <generated-key>`.
+
+By default the key is random on every start. Set `PROXY_API_KEY` to a fixed secret (at least 16 characters) for a stable key you choose. Set `PROXY_STATE_FILE` (for example `/tmp/vertexai-proxy.json`) to persist a generated key across restarts. The file is written with mode `0600` and contains only `apiKey` and `createdAt`. `PROXY_API_KEY` wins when both are set. Treat the state file like a credential on shared machines.
 
 ```bash
 curl -sS http://127.0.0.1:8765/v1/chat/completions \
@@ -38,7 +40,7 @@ curl -sS http://127.0.0.1:8765/v1/chat/completions \
 
 OpenAI clients use base URL `http://127.0.0.1:8765/v1` and the printed key.
 
-`PROXY_PORT` defaults to `8765`. `VERTEX_LOCATION` defaults to `global`. It accepts `global`, `us`, `eu`, or a regional location such as `us-central1`. Model availability varies by region. For `gemini-3.8-flash`, use `global` or the `us`/`eu` multi-region. See [`docs/typescript-proxy.md`](docs/typescript-proxy.md).
+`PROXY_PORT` defaults to `8765`. `VERTEX_LOCATION` defaults to `global`. `PROXY_LOG_LEVEL` (or `--log-level`) is `error`, `warn`, `info`, or `debug` (default `info`). At `info`, each HTTP call logs a `request` and `response` line with status, duration, and response metadata. List models responses include `vertex_project`, `vertex_location`, `model_count`, and a comma-separated `models` list. Chat completions include `vertex_provider`, `vertex_model`, `vertex_upstream_status`, token counts, and `finish_reason`. Set `PROXY_ACCESS_LOG=0` to suppress those HTTP lines while keeping other `info` messages. At `debug`, upstream Vertex URLs are logged. Set `PROXY_LOG_FILE` (for example `/tmp/vertexai-proxy.log`) to append all emitted log lines to a file. It accepts `global`, `us`, `eu`, or a regional location such as `us-central1`. Model availability varies by region. For `gemini-3.8-flash`, use `global` or the `us`/`eu` multi-region. See [`docs/typescript-proxy.md`](docs/typescript-proxy.md).
 
 ## Configuration
 
@@ -76,11 +78,11 @@ E2E_MODELS=gemini-3.8-flash,claude-sonnet-5-5 GOOGLE_CLOUD_PROJECT="<your-projec
 ## Cursor
 
 - [Cursor IDE](docs/cursor-ide.md) is documented for a public HTTPS URL. The proxy binds `127.0.0.1`, so a tunnel or reverse proxy is required. This path is not verified end-to-end; use neutral aliases such as `vx-sonnet-5-5`.
-- [Cursor CLI](docs/cursor-cli.md) cannot use this proxy today.
+- [Cursor CLI](docs/cursor-cli.md): `/opt/homebrew/bin/cursor agent` uses Cursor auth and RPC, not this proxy. Vertex Haiku: `curl`/`OpenAI SDK` with model `claude-haiku-5-5` and `PROXY_API_KEY`.
 
 ## Limitations
 
-The proxy is text-only. It has no SSE streaming and no tool calling, and it rejects `stream: true` with HTTP 400. A function call is reported as `finish_reason: tool_calls`, but no tool-call payload is forwarded. The request body limit is 1 MiB. Live Vertex integration tests are not part of CI. Use `pnpm e2e` with a real project.
+The proxy is text-only. Chat `stream: true` is buffered into a minimal OpenAI-style SSE response (one content chunk, then finish). There is no incremental token streaming from Vertex and no tool calling. A function call is reported as `finish_reason: tool_calls`, but no tool-call payload is forwarded. The request body limit is 1 MiB. Live Vertex integration tests are not part of CI. Use `pnpm e2e` with a real project.
 
 ## Development
 

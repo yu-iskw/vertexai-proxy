@@ -1,96 +1,115 @@
-# Cursor CLI setup attempt
+# Cursor CLI and this proxy
 
-## Outcome
-
-The Cursor CLI cannot use this proxy today.
-
-The CLI authenticates with a Cursor account or Cursor API key and speaks Cursor's private RPC protocol. It has no custom OpenAI-compatible base URL and no provider API key. This page is a step-by-step verification guide so you can confirm that on your machine. It is not a working setup guide.
-
-## Before you start
-
-- `cursor-agent` and `agent` are the terminal agent CLI. `cursor` is the Cursor IDE CLI, and `cursor agent` starts the same terminal agent.
-- The proxy exposes OpenAI-compatible HTTP routes. The CLI does not use those routes.
-- For the desktop Cursor IDE path, see [`docs/cursor-ide.md`](cursor-ide.md).
-- The proxy accepts `--project`, `--location`, `--models`, and `--impersonate-service-account`; flags override environment variables. For impersonation, keep plain ADC and pass `--impersonate-service-account "<sa>@<your-project-id>.iam.gserviceaccount.com"`. The caller needs `roles/iam.serviceAccountTokenCreator` on the target service account.
-
-## Step 1: Check the installed CLI
+Entrypoint:
 
 ```bash
-command -v cursor cursor-agent agent
-cursor --version
-cursor-agent --version
-cursor agent --help
-cursor-agent --help
+/opt/homebrew/bin/cursor agent [options] [command] [prompt...]
 ```
 
-The help shows `--api-key` or `CURSOR_API_KEY`, `-H/--header`, `-e/--endpoint` or `CURSOR_API_ENDPOINT`, `--model`, `--list-models`, `-p/--print`, and `--output-format`.
+`cursor agent` runs **`~/.local/bin/cursor-agent`**, which talks to **Cursor’s backend** (`https://api2.cursor.sh` by default). It is **not** an OpenAI-compatible client.
 
-There is no option for a custom OpenAI base URL or an OpenAI provider key. Source: local `cursor-agent --help` and `cursor agent --help`.
+This proxy speaks **OpenAI HTTP** (`GET /v1/models`, `POST /v1/chat/completions`) and forwards to **Vertex AI**.
 
-## Step 2: Check the only endpoint override
+## Two different API keys
 
-`-e/--endpoint` and `CURSOR_API_ENDPOINT` select Cursor's public API base. They do not select an OpenAI-compatible API.
+| Key                  | Purpose                                                                                            | Used with                               |
+| -------------------- | -------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| **`CURSOR_API_KEY`** | Cursor account (from [cursor.com/dashboard](https://cursor.com/dashboard) or `cursor agent login`) | `/opt/homebrew/bin/cursor agent`        |
+| **`PROXY_API_KEY`**  | Bearer auth for **this** proxy (min 16 chars, set at proxy startup)                                | `curl`, OpenAI SDK, IDE custom base URL |
 
-Cursor staff state that the CLI does not support BYOK with your own provider API keys yet and only uses Cursor account authentication. Source: <https://forum.cursor.com/t/can-i-use-provider-api-keys-with-cursor-cli-agent/149158/3>
+They are **not interchangeable**. Putting `PROXY_API_KEY` in `--api-key` or `CURSOR_API_KEY` does not route the agent to Vertex through the proxy.
 
-LiteLLM documents that the CLI posts to `/auth/exchange_user_api_key` and then uses Cursor-private RPC. Pointing it at an OpenAI-compatible proxy fails with `The provided API key is invalid`. Source: <https://docs.litellm.ai/docs/tutorials/cursor_integration>
+## Why `cursor agent -e http://127.0.0.1:8765` fails
 
-Do not point this proxy at `--endpoint`.
+Your command:
 
-## Step 3: Confirm the CLI protocol
+```bash
+/opt/homebrew/bin/cursor agent -e 'http://127.0.0.1:8765' -p 'hi'
+```
 
-A read-only grep of the installed bundle found no `OPENAI_BASE_URL`, `OPENAI_API_BASE`, `openaiBaseUrl`, or `overrideOpenAIBaseUrl` strings. It found no `chat/completions` or `/v1/responses` routes.
+fails with **Authentication required** when you are **not logged in** and **`CURSOR_API_KEY` is unset**. The agent still expects a **Cursor** credential before it runs, even if you point `-e` at localhost.
 
-The bundle defines Cursor's own service:
+If you pass the **proxy** bearer as `--api-key`, the CLI warns that the key is invalid and may call Cursor-specific paths on the proxy, for example:
 
 ```text
-aiserver.v1.AiService ... streamChat ... streamChatWeb ... streamChatTryReallyHard
+POST /auth/exchange_user_api_key → 404
 ```
 
-Those are server-streaming Cursor RPC methods, not OpenAI HTTP routes. Source: installed bundle at `/Users/yu/.local/share/cursor-agent/versions/2026.10.12-d47ca18`.
+`-e` / `CURSOR_API_ENDPOINT` only changes **where Cursor RPC** is sent. It does **not** switch the agent to OpenAI `/v1/chat/completions`. The proxy is not a Cursor API server.
 
-## Step 4: Check the CLI config
+## Goal: Claude Haiku 5.5 on Vertex via `cursor agent`
 
-`~/.cursor/cli-config.json` has no provider, API-key, or OpenAI base-URL setting.
+**Underlying intent:** Run the **terminal agent** (`cursor agent`) with model **`claude-haiku-5-5-medium`** (or equivalent) while **inference and billing go through your Vertex proxy**.
 
-`serverConfigCache.backendUrl` and `serverConfigCache.agentUrlConfig.agentUrl` are caches of URLs provided by Cursor servers. They are not a documented override. Editing those cache values would not make the CLI speak OpenAI chat completions.
+**Stated approach:** `-e http://127.0.0.1:8765` plus proxy env vars.
 
-## Step 5: Choose a supported path
+**XY check:** `-e` solves “talk to localhost” but not “use OpenAI chat against Vertex.” The agent’s model loop is Cursor RPC + Cursor auth, not `PROXY_API_KEY` + `/v1/chat/completions`.
 
-- Use the desktop Cursor IDE with a public HTTPS URL. See [`docs/cursor-ide.md`](cursor-ide.md).
-- Use another OpenAI-compatible CLI with base URL `http://127.0.0.1:8765/v1` and the key printed at startup.
+### What works today (Vertex Haiku through the proxy)
 
-OpenAI's Cursor integration article says BYOK and custom OpenAI-compatible base URLs apply only to local Chat and Agent in the Cursor desktop app. They do not apply to the Cursor CLI, Cloud or Background Agents, Tab, Auto, or the API/SDK. Source: <https://help.openai.com/en/articles/20001506-using-openai-models-in-cursor>
+Proxy model id: **`claude-haiku-5-5`** (see `GET /v1/models`).
 
-## Evidence
+```bash
+export PROXY_API_KEY='<your-proxy-bearer-key>'
 
-Grep counts from the installed bundle:
+curl -sS http://127.0.0.1:8765/v1/chat/completions \
+  -H "Authorization: Bearer $PROXY_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "claude-haiku-5-5",
+    "messages": [{"role": "user", "content": "Say hi in one word"}]
+  }'
+```
 
-| Pattern                 | Count | Representative context                                    |
-| ----------------------- | ----- | --------------------------------------------------------- |
-| `OPENAI_BASE_URL`       | 0     | none                                                      |
-| `OPENAI_API_BASE`       | 0     | none                                                      |
-| `openaiBaseUrl`         | 0     | none                                                      |
-| `overrideOpenAIBaseUrl` | 0     | none                                                      |
-| `baseUrl`               | 126   | PDF worker, Cursor bridge, metrics, download, local agent |
-| `apiBase`               | 5     | Cursor auth and GitHub API                                |
-| `CURSOR_API_URL`        | 4     | Cursor public API base override                           |
-| `CURSOR_API_ENDPOINT`   | 9     | Cursor public API base override                           |
-| `customModel`           | 10    | account custom model IDs                                  |
-| `provider`              | 307   | permissions, config, telemetry, desktop providers         |
-| `byok`                  | 5     | server feature flags, not a CLI option                    |
+With access logging:
 
-The official CLI parameter reference also has no custom base URL or provider key. Source: <https://cursor.com/docs/cli/reference/parameters>
+```bash
+export PROXY_LOG_FILE=/tmp/vertexai-proxy.log
+export PROXY_ACCESS_LOG=1
+```
 
-## Gemini 3.8 Flash notes
+Expect `POST /v1/chat/completions` with `vertex_upstream_status=200` and `model=claude-haiku-5-5`.
 
-- Model ID: `gemini-3.8-flash`.
-- Status: GA, published 2026-09-02.
-- Regions: `global`, and multi-region `us` and `eu`. It is not available in regional endpoints such as `us-central1`.
-- Global endpoint: `https://aiplatform.googleapis.com/v1/projects/PROJECT_ID/locations/global/publishers/google/models/gemini-3.8-flash:generateContent`.
-- `temperature`, `top_p`, and `top_k` are ignored.
-- `frequency_penalty`, `presence_penalty`, and `candidate_count` return errors.
-- Thinking levels are `LOW`, `MEDIUM`, and `HIGH`. There is no `MINIMAL`.
-- History must not end with a model turn.
+### What `cursor agent` does today (measured)
 
-Sources: <https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-3-8-flash> and <https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-8-flash>
+| Setup                                                | Proxy chat logs?                        | Vertex Haiku?             |
+| ---------------------------------------------------- | --------------------------------------- | ------------------------- |
+| Default `cursor agent` after `cursor agent login`    | No                                      | No (Cursor-hosted models) |
+| `OPENAI_*` / `CURSOR_LOCAL_AGENT_*` + `cursor agent` | No (0 log lines)                        | No                        |
+| `-e http://127.0.0.1:8765` without `CURSOR_API_KEY`  | No (auth error first)                   | No                        |
+| `-e` + `CURSOR_API_KEY` + proxy as endpoint          | Cursor RPC on proxy (404/401), not chat | No                        |
+
+**Conclusion:** Stock **`/opt/homebrew/bin/cursor agent` cannot today satisfy “agent UX + Vertex Haiku via this proxy.”** That requires Cursor to support a custom OpenAI-compatible base URL for the CLI agent (or a supported local-openai mode). See forum thread on provider keys and CLI.
+
+### Closest terminal workaround (not `cursor agent`)
+
+Cursor ships a separate **agent-cli-local** product (hidden `--authless`, `CURSOR_LOCAL_AGENT_BASE_URL`). It is **not** invoked by `/opt/homebrew/bin/cursor agent` (`--authless` errors: _only for agent-cli-local_). We do not ship install scripts for it in this repo; use HTTP/`curl` or the IDE path below for supported workflows.
+
+### IDE path (OpenAI-compatible, not CLI)
+
+For editor chat with a custom base URL, see [cursor-ide.md](cursor-ide.md) (public HTTPS tunnel usually required). That is separate from `cursor agent`.
+
+## Running `cursor agent` normally (Cursor cloud, not this proxy)
+
+```bash
+/opt/homebrew/bin/cursor agent login
+# or: export CURSOR_API_KEY='<cursor-dashboard-key>'
+
+/opt/homebrew/bin/cursor agent -p --model claude-haiku-5-5-medium "your prompt"
+```
+
+This uses **Cursor’s** backend and subscription. It does **not** use `PROXY_API_KEY` or Vertex.
+
+## Summary
+
+| Surface                                      | Vertex Haiku via this proxy?          |
+| -------------------------------------------- | ------------------------------------- |
+| `curl` / OpenAI SDK → `/v1/chat/completions` | **Yes** (`claude-haiku-5-5`)          |
+| `/opt/homebrew/bin/cursor agent`             | **No** (by design today)              |
+| `-e` pointed at proxy                        | **No** (wrong protocol + Cursor auth) |
+
+## References
+
+- Cursor CLI parameters: <https://cursor.com/docs/cli/reference/parameters>
+- Forum (no BYOK on CLI): <https://forum.cursor.com/t/can-i-use-provider-api-keys-with-cursor-cli-agent/149158/3>
+- OpenAI in Cursor (IDE vs CLI): <https://help.openai.com/en/articles/20001506-using-openai-models-in-cursor>

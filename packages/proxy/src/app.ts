@@ -2,6 +2,8 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 
 import { vertexHost } from './locations.js';
 
+import type { AccessLogMeta } from './access-log.js';
+import type { Logger } from './logger.js';
 import type { ModelDefinition } from './models.js';
 
 type MessageRole = 'system' | 'user' | 'assistant';
@@ -28,6 +30,7 @@ export type AppOptions = {
   project: string;
   location: string;
   getAccessToken: () => Promise<string>;
+  logger: Logger;
   fetch?: FetchLike;
 };
 
@@ -42,6 +45,7 @@ export type ProxyResponse = {
   status: number;
   headers: Record<string, string>;
   body: string;
+  accessMeta?: AccessLogMeta;
 };
 
 export type App = {
@@ -51,7 +55,8 @@ export type App = {
 type JsonRecord = Record<string, unknown>;
 type FinishReason = 'stop' | 'length' | 'content_filter' | 'tool_calls';
 type VertexTokens = { input: number; output: number; total: number };
-type VertexOutput = { text: string; tokens: VertexTokens; finishReason: FinishReason };
+type VertexBody = { text: string; tokens: VertexTokens; finishReason: FinishReason };
+type VertexOutput = VertexBody & { upstreamStatus: number };
 type VertexRequest = { url: string; payload: unknown };
 
 const ROLE_SYSTEM = 'system';
@@ -104,11 +109,48 @@ function isChatRequest(value: unknown): value is ChatRequest {
   return true;
 }
 
-function json(status: number, body: unknown): ProxyResponse {
+function json(status: number, body: unknown, accessMeta?: AccessLogMeta): ProxyResponse {
   return {
     status,
     headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
     body: JSON.stringify(body),
+    accessMeta,
+  };
+}
+
+function sseChatCompletion(
+  input: ChatRequest,
+  target: ModelDefinition,
+  output: VertexOutput,
+  options: AppOptions,
+): ProxyResponse {
+  const id = `chatcmpl-${randomUUID()}`;
+  const created = Math.floor(Date.now() / 1000);
+  const accessMeta = chatCompletionAccessMeta(options, input, target, output);
+  const chunkBase = { id, object: 'chat.completion.chunk' as const, created, model: input.model };
+  const contentChunk = {
+    ...chunkBase,
+    choices: [
+      {
+        index: 0,
+        delta: { role: ROLE_ASSISTANT, content: output.text },
+        finish_reason: null,
+      },
+    ],
+  };
+  const finishChunk = {
+    ...chunkBase,
+    choices: [{ index: 0, delta: {}, finish_reason: output.finishReason }],
+  };
+  const body =
+    `data: ${JSON.stringify(contentChunk)}\n\n` +
+    `data: ${JSON.stringify(finishChunk)}\n\n` +
+    'data: [DONE]\n\n';
+  return {
+    status: 200,
+    headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' },
+    body,
+    accessMeta,
   };
 }
 
@@ -117,8 +159,11 @@ function errorResponse(
   message: string,
   type: string,
   code?: string,
+  accessMeta?: AccessLogMeta,
 ): ProxyResponse {
-  return json(status, { error: { message, type, ...(code === undefined ? {} : { code }) } });
+  const meta: AccessLogMeta = { ...(accessMeta ?? {}), error_type: type };
+  if (code !== undefined) meta.error_code = code;
+  return json(status, { error: { message, type, ...(code === undefined ? {} : { code }) } }, meta);
 }
 
 function authorized(header: string | undefined, apiKey: string): boolean {
@@ -215,7 +260,7 @@ function geminiFinishReason(data: JsonRecord, first: unknown, parts: unknown): F
   return mapGeminiFinishReason(raw, hasFunctionCall(parts));
 }
 
-function geminiOutput(data: unknown): VertexOutput {
+function geminiOutput(data: unknown): VertexBody {
   if (!isRecord(data)) {
     return { text: '', tokens: { input: 0, output: 0, total: 0 }, finishReason: 'stop' };
   }
@@ -236,7 +281,7 @@ function geminiOutput(data: unknown): VertexOutput {
   };
 }
 
-function anthropicOutput(data: unknown): VertexOutput {
+function anthropicOutput(data: unknown): VertexBody {
   if (!isRecord(data)) {
     return { text: '', tokens: { input: 0, output: 0, total: 0 }, finishReason: 'stop' };
   }
@@ -308,6 +353,29 @@ function vertexBaseUrl(project: string, location: string): string {
   return `https://${vertexHost(location)}/v1/projects/${project}/locations/${location}`;
 }
 
+function vertexRoutingMeta(project: string, location: string): AccessLogMeta {
+  return { vertex_project: project, vertex_location: location };
+}
+
+function chatCompletionAccessMeta(
+  options: AppOptions,
+  input: ChatRequest,
+  target: ModelDefinition,
+  output: VertexOutput,
+): AccessLogMeta {
+  return {
+    ...vertexRoutingMeta(options.project, options.location),
+    model: input.model,
+    vertex_provider: target.provider,
+    vertex_model: target.model,
+    vertex_upstream_status: output.upstreamStatus,
+    finish_reason: output.finishReason,
+    prompt_tokens: output.tokens.input,
+    completion_tokens: output.tokens.output,
+    total_tokens: output.tokens.total,
+  };
+}
+
 async function callVertex(
   input: ChatRequest,
   target: ModelDefinition,
@@ -320,6 +388,7 @@ async function callVertex(
     target.provider === 'gemini'
       ? geminiRequest(input, target.model, base)
       : anthropicRequest(input, target.model, base);
+  options.logger.debug(`upstream POST ${request.url}`);
   const fetchImpl = options.fetch ?? globalThis.fetch;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 120_000);
@@ -333,11 +402,13 @@ async function callVertex(
       },
       body: JSON.stringify(request.payload),
     });
+    const upstreamStatus = response.status;
     if (!response.ok) {
-      throw new HttpError(502, `Vertex AI returned HTTP ${response.status}`, 'api_error');
+      throw new HttpError(502, `Vertex AI returned HTTP ${upstreamStatus}`, 'api_error');
     }
     const data = (await response.json()) as unknown;
-    return target.provider === 'gemini' ? geminiOutput(data) : anthropicOutput(data);
+    const parsed = target.provider === 'gemini' ? geminiOutput(data) : anthropicOutput(data);
+    return { ...parsed, upstreamStatus };
   } finally {
     clearTimeout(timer);
   }
@@ -354,14 +425,23 @@ export function createApp(options: AppOptions): App {
           return errorResponse(401, 'Unauthorized', 'authentication_error');
         }
         if (request.method === 'GET' && request.path === '/v1/models') {
-          return json(200, {
-            object: 'list',
-            data: [...options.models.keys()].map((id) => ({
-              id,
-              object: 'model',
-              owned_by: 'vertex-ai',
-            })),
-          });
+          const modelIds = [...options.models.keys()].sort();
+          return json(
+            200,
+            {
+              object: 'list',
+              data: modelIds.map((id) => ({
+                id,
+                object: 'model',
+                owned_by: 'vertex-ai',
+              })),
+            },
+            {
+              ...vertexRoutingMeta(options.project, options.location),
+              model_count: modelIds.length,
+              models: modelIds.join(','),
+            },
+          );
         }
         if (request.method !== 'POST' || request.path !== '/v1/chat/completions') {
           return errorResponse(404, 'Not found', 'invalid_request_error');
@@ -370,9 +450,6 @@ export function createApp(options: AppOptions): App {
         if (!isChatRequest(input)) {
           return errorResponse(400, 'Invalid chat completion request', 'invalid_request_error');
         }
-        if (input.stream === true) {
-          return errorResponse(400, 'Streaming is not yet supported', 'invalid_request_error');
-        }
         const target = options.models.get(input.model);
         if (target === undefined) {
           return errorResponse(
@@ -380,27 +457,35 @@ export function createApp(options: AppOptions): App {
             `Model "${input.model}" not found`,
             'invalid_request_error',
             'model_not_found',
+            { model: input.model },
           );
         }
         const output = await callVertex(input, target, options);
-        return json(200, {
-          id: `chatcmpl-${randomUUID()}`,
-          object: 'chat.completion',
-          created: Math.floor(Date.now() / 1000),
-          model: input.model,
-          choices: [
-            {
-              index: 0,
-              message: { role: ROLE_ASSISTANT, content: output.text },
-              finish_reason: output.finishReason,
+        if (input.stream === true) {
+          return sseChatCompletion(input, target, output, options);
+        }
+        return json(
+          200,
+          {
+            id: `chatcmpl-${randomUUID()}`,
+            object: 'chat.completion',
+            created: Math.floor(Date.now() / 1000),
+            model: input.model,
+            choices: [
+              {
+                index: 0,
+                message: { role: ROLE_ASSISTANT, content: output.text },
+                finish_reason: output.finishReason,
+              },
+            ],
+            usage: {
+              prompt_tokens: output.tokens.input,
+              completion_tokens: output.tokens.output,
+              total_tokens: output.tokens.total,
             },
-          ],
-          usage: {
-            prompt_tokens: output.tokens.input,
-            completion_tokens: output.tokens.output,
-            total_tokens: output.tokens.total,
           },
-        });
+          chatCompletionAccessMeta(options, input, target, output),
+        );
       } catch (cause) {
         if (cause instanceof HttpError) {
           return errorResponse(cause.status, cause.message, cause.type, cause.code);
