@@ -67,6 +67,6 @@ variable "proxy_api_key_secret_version" {
 
 variable "vertex_location" {
   type        = string
-  description = "VERTEX_LOCATION value. Empty leaves the proxy default."
-  default     = ""
+  description = "VERTEX_LOCATION value. Omit it to keep the proxy default."
+  default     = null
 }

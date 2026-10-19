@@ -5,7 +5,7 @@ import { parseArgs } from 'node:util';
 import { GoogleAuth, Impersonated } from 'google-auth-library';
 
 import { logRequest, logResponse, requestPath } from './access-log.js';
-import { apiKeyBootstrapText, resolveApiKey } from './api-key-state.js';
+import { resolveApiKey } from './api-key-state.js';
 import { createApp } from './app.js';
 import { resolveListenEndpoint } from './listen-endpoint.js';
 import { isSupportedLocation } from './locations.js';
@@ -179,18 +179,17 @@ export function start(
   const { apiKey, source, stateFile } = resolveApiKey(env);
   if (source === 'env') {
     logger.info('API key loaded from PROXY_API_KEY');
-  } else if (source === 'state-file' && stateFile !== undefined) {
-    logger.info(`API key loaded from ${stateFile}`);
-  } else if (stateFile !== undefined) {
-    logger.info(`API key generated and persisted to ${stateFile}`);
   } else {
-    logger.info(
-      'API key generated for this process (set PROXY_API_KEY or PROXY_STATE_FILE to fix across restarts)',
-    );
-  }
-  const keyLine = apiKeyBootstrapText(source, apiKey);
-  if (keyLine !== undefined) {
-    writeBootstrapLine(keyLine, env);
+    writeBootstrapLine(`API key: ${apiKey}`, env);
+    if (source === 'state-file' && stateFile !== undefined) {
+      logger.info(`API key loaded from ${stateFile}`);
+    } else if (stateFile !== undefined) {
+      logger.info(`API key generated and persisted to ${stateFile}`);
+    } else {
+      logger.info(
+        'API key generated for this process (set PROXY_API_KEY or PROXY_STATE_FILE to fix across restarts)',
+      );
+    }
   }
 
   const getAccessToken = createGetAccessToken(impersonateServiceAccount);

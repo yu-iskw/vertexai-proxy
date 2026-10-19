@@ -32,7 +32,7 @@ resource "google_cloud_run_v2_service" "proxy" {
       }
 
       dynamic "env" {
-        for_each = var.vertex_location == "" ? [] : [var.vertex_location]
+        for_each = var.vertex_location == null ? [] : [var.vertex_location]
         content {
           name  = "VERTEX_LOCATION"
           value = env.value

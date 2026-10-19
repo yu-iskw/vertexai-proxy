@@ -2,9 +2,10 @@ FROM node:24.13.0-bookworm-slim AS build
 WORKDIR /src
 RUN corepack enable && corepack prepare pnpm@11.0.5 --activate
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY packages/proxy/package.json packages/proxy/tsconfig.json packages/proxy/
-COPY packages/proxy/src packages/proxy/src
+COPY packages/proxy/package.json packages/proxy/package.json
 RUN pnpm install --frozen-lockfile
+COPY packages/proxy/tsconfig.json packages/proxy/tsconfig.json
+COPY packages/proxy/src packages/proxy/src
 RUN pnpm --filter @vertexai-proxy/server build
 RUN pnpm --filter @vertexai-proxy/server deploy --prod /out
 RUN mkdir -p /out/dist && cp -a packages/proxy/dist/. /out/dist/

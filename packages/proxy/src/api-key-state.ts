@@ -4,11 +4,8 @@ import { dirname } from 'node:path';
 import { generateApiKey } from './api-key.js';
 
 const MIN_API_KEY_LENGTH = 16;
-const ENV_SOURCE = 'env' as const;
-const STATE_FILE_SOURCE = 'state-file' as const;
-const GENERATED_SOURCE = 'generated' as const;
 
-type ApiKeySource = typeof ENV_SOURCE | typeof STATE_FILE_SOURCE | typeof GENERATED_SOURCE;
+type ApiKeySource = 'env' | 'state-file' | 'generated';
 
 type ResolvedApiKey = {
   apiKey: string;
@@ -20,20 +17,6 @@ type StateFilePayload = {
   apiKey: string;
   createdAt: string;
 };
-
-export function apiKeyBootstrapText(source: ApiKeySource, apiKey: string): string | undefined {
-  switch (source) {
-    case ENV_SOURCE:
-      return undefined;
-    case STATE_FILE_SOURCE:
-    case GENERATED_SOURCE:
-      return `API key: ${apiKey}`;
-    default: {
-      const unexpected: never = source;
-      return unexpected;
-    }
-  }
-}
 
 export function validateApiKey(key: string): void {
   const trimmed = key.trim();
@@ -95,12 +78,12 @@ export function writeStateFile(path: string, apiKey: string): void {
 function createStateFileOrRead(path: string, apiKey: string): ResolvedApiKey {
   try {
     writeStateFile(path, apiKey);
-    return { apiKey, source: GENERATED_SOURCE, stateFile: path };
+    return { apiKey, source: 'generated', stateFile: path };
   } catch (cause: unknown) {
     if (typeof cause === 'object' && cause !== null && 'code' in cause && cause.code === 'EEXIST') {
       const existing = readStateFile(path);
       if (existing !== undefined) {
-        return { apiKey: existing, source: STATE_FILE_SOURCE, stateFile: path };
+        return { apiKey: existing, source: 'state-file', stateFile: path };
       }
     }
     throw cause;
@@ -111,18 +94,18 @@ export function resolveApiKey(env: NodeJS.ProcessEnv = process.env): ResolvedApi
   const fromEnv = (env.PROXY_API_KEY ?? '').trim();
   if (fromEnv !== '') {
     validateApiKey(fromEnv);
-    return { apiKey: fromEnv, source: ENV_SOURCE };
+    return { apiKey: fromEnv, source: 'env' };
   }
 
   const statePath = (env.PROXY_STATE_FILE ?? '').trim();
   if (statePath !== '') {
     const existing = readStateFile(statePath);
     if (existing !== undefined) {
-      return { apiKey: existing, source: STATE_FILE_SOURCE, stateFile: statePath };
+      return { apiKey: existing, source: 'state-file', stateFile: statePath };
     }
     const apiKey = generateApiKey();
     return createStateFileOrRead(statePath, apiKey);
   }
 
-  return { apiKey: generateApiKey(), source: GENERATED_SOURCE };
+  return { apiKey: generateApiKey(), source: 'generated' };
 }
