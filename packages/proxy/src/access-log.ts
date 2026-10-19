@@ -1,6 +1,6 @@
 import type { Logger } from './logger.js';
 
-export function accessLogEnabled(env: NodeJS.ProcessEnv): boolean {
+function accessLogEnabled(env: NodeJS.ProcessEnv): boolean {
   const value = (env.PROXY_ACCESS_LOG ?? '1').trim().toLowerCase();
   return value !== '0' && value !== 'false' && value !== 'no';
 }
@@ -19,7 +19,7 @@ export function logRequest(
   logger.info(`request ${method} ${path}`);
 }
 
-export type LogResponseInput = {
+type LogResponseInput = {
   method: string;
   path: string;
   status: number;

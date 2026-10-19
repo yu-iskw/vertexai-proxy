@@ -53,7 +53,7 @@ export type Logger = {
 let fileSink: WriteStream | undefined;
 let fileSinkPath: string | undefined;
 
-export function resetLogSink(): void {
+function resetLogSink(): void {
   fileSink?.end();
   fileSink = undefined;
   fileSinkPath = undefined;

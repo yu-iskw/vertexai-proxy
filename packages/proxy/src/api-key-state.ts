@@ -3,11 +3,11 @@ import { dirname } from 'node:path';
 
 import { generateApiKey } from './api-key.js';
 
-export const MIN_API_KEY_LENGTH = 16;
+const MIN_API_KEY_LENGTH = 16;
 
-export type ApiKeySource = 'env' | 'state-file' | 'generated';
+type ApiKeySource = 'env' | 'state-file' | 'generated';
 
-export type ResolvedApiKey = {
+type ResolvedApiKey = {
   apiKey: string;
   source: ApiKeySource;
   stateFile?: string;

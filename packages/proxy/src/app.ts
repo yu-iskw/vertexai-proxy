@@ -434,93 +434,100 @@ async function callVertex(
   }
 }
 
+function listModelsResponse(options: AppOptions): ProxyResponse {
+  const modelIds = [...options.models.keys()].sort();
+  return json(
+    200,
+    {
+      object: 'list',
+      data: modelIds.map((id) => ({
+        id,
+        object: 'model',
+        owned_by: 'vertex-ai',
+      })),
+    },
+    {
+      ...vertexRoutingMeta(options.project, options.location),
+      model_count: modelIds.length,
+      models: modelIds.join(','),
+    },
+  );
+}
+
+async function handleChatCompletions(
+  request: ProxyRequest,
+  options: AppOptions,
+): Promise<ProxyResponse> {
+  try {
+    const input = await bodyOf(request.body);
+    if (!isChatRequest(input)) {
+      return errorResponse(400, 'Invalid chat completion request', 'invalid_request_error');
+    }
+    const target = options.models.get(input.model);
+    if (target === undefined) {
+      return errorResponse(
+        404,
+        `Model "${input.model}" not found`,
+        'invalid_request_error',
+        'model_not_found',
+        { model: input.model },
+      );
+    }
+    const output = await callVertex(input, target, options);
+    if (input.stream === true) {
+      return sseChatCompletion(input, target, output, options);
+    }
+    return json(
+      200,
+      {
+        id: `chatcmpl-${randomUUID()}`,
+        object: 'chat.completion',
+        created: Math.floor(Date.now() / 1000),
+        model: input.model,
+        choices: [
+          {
+            index: 0,
+            message: { role: ROLE_ASSISTANT, content: output.text },
+            finish_reason: output.finishReason,
+          },
+        ],
+        usage: {
+          prompt_tokens: output.tokens.input,
+          completion_tokens: output.tokens.output,
+          total_tokens: output.tokens.total,
+        },
+      },
+      chatCompletionAccessMeta(options, input, target, output),
+    );
+  } catch (cause) {
+    if (cause instanceof HttpError) {
+      return errorResponse(cause.status, cause.message, cause.type, cause.code, cause.accessMeta);
+    }
+    options.logger.error(
+      `chat completion failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
+    return errorResponse(502, 'Vertex AI request failed', 'api_error');
+  }
+}
+
+async function handleRequest(request: ProxyRequest, options: AppOptions): Promise<ProxyResponse> {
+  if (request.method === 'GET' && request.path === '/healthz') {
+    return json(200, { status: 'ok' });
+  }
+  if (!authorized(request.authorization, options.apiKey)) {
+    return errorResponse(401, 'Unauthorized', 'authentication_error');
+  }
+  if (request.method === 'GET' && request.path === '/v1/models') {
+    return listModelsResponse(options);
+  }
+  if (request.method !== 'POST' || request.path !== '/v1/chat/completions') {
+    return errorResponse(404, 'Not found', 'invalid_request_error');
+  }
+  return handleChatCompletions(request, options);
+}
+
 export function createApp(options: AppOptions): App {
   return {
-    async handle(request) {
-      try {
-        if (request.method === 'GET' && request.path === '/healthz') {
-          return json(200, { status: 'ok' });
-        }
-        if (!authorized(request.authorization, options.apiKey)) {
-          return errorResponse(401, 'Unauthorized', 'authentication_error');
-        }
-        if (request.method === 'GET' && request.path === '/v1/models') {
-          const modelIds = [...options.models.keys()].sort();
-          return json(
-            200,
-            {
-              object: 'list',
-              data: modelIds.map((id) => ({
-                id,
-                object: 'model',
-                owned_by: 'vertex-ai',
-              })),
-            },
-            {
-              ...vertexRoutingMeta(options.project, options.location),
-              model_count: modelIds.length,
-              models: modelIds.join(','),
-            },
-          );
-        }
-        if (request.method !== 'POST' || request.path !== '/v1/chat/completions') {
-          return errorResponse(404, 'Not found', 'invalid_request_error');
-        }
-        const input = await bodyOf(request.body);
-        if (!isChatRequest(input)) {
-          return errorResponse(400, 'Invalid chat completion request', 'invalid_request_error');
-        }
-        const target = options.models.get(input.model);
-        if (target === undefined) {
-          return errorResponse(
-            404,
-            `Model "${input.model}" not found`,
-            'invalid_request_error',
-            'model_not_found',
-            { model: input.model },
-          );
-        }
-        const output = await callVertex(input, target, options);
-        if (input.stream === true) {
-          return sseChatCompletion(input, target, output, options);
-        }
-        return json(
-          200,
-          {
-            id: `chatcmpl-${randomUUID()}`,
-            object: 'chat.completion',
-            created: Math.floor(Date.now() / 1000),
-            model: input.model,
-            choices: [
-              {
-                index: 0,
-                message: { role: ROLE_ASSISTANT, content: output.text },
-                finish_reason: output.finishReason,
-              },
-            ],
-            usage: {
-              prompt_tokens: output.tokens.input,
-              completion_tokens: output.tokens.output,
-              total_tokens: output.tokens.total,
-            },
-          },
-          chatCompletionAccessMeta(options, input, target, output),
-        );
-      } catch (cause) {
-        if (cause instanceof HttpError) {
-          return errorResponse(
-            cause.status,
-            cause.message,
-            cause.type,
-            cause.code,
-            cause.accessMeta,
-          );
-        }
-        options.logger.error(
-          `chat completion failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-        );
-        return errorResponse(502, 'Vertex AI request failed', 'api_error');
-      }
-    },
+    handle: (request) => handleRequest(request, options),
   };
 }
